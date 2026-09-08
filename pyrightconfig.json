@@ -1,0 +1,22 @@
+{
+  "include": ["apps/api", "scripts"],
+  "exclude": ["**/node_modules", "**/__pycache__", ".venv", "apps/web"],
+  "venvPath": ".",
+  "venv": ".venv",
+  "pythonVersion": "3.13",
+  "typeCheckingMode": "basic",
+  "reportMissingImports": true,
+  "extraPaths": ["apps/api"],
+  "executionEnvironments": [
+    {
+      "root": "apps/api",
+      "pythonVersion": "3.13",
+      "extraPaths": ["."]
+    },
+    {
+      "root": "scripts",
+      "pythonVersion": "3.13",
+      "extraPaths": ["apps/api"]
+    }
+  ]
+}

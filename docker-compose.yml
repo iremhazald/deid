@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  deid-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: deid-legaltech
+    ports:
+      - "8000:8000"
+    environment:
+      # CORS origin (adjust for your frontend URL)
+      - REDACTION_ALLOWED_ORIGIN=http://localhost:5173
+
+      # Job settings
+      - REDACTION_JOB_TTL_SECONDS=1800
+      - REDACTION_MAX_FILE_MB=25
+
+      # Debug (set to true for detection pipeline stats)
+      - DEBUG_DETECTION=false
+
+    volumes:
+      # Persist redacted outputs
+      - ./outputs:/app/outputs
+
+      # Optional: mount .env file for secrets
+      # - ./.env:/app/.env:ro
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health').read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s

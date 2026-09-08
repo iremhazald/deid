@@ -1,0 +1,135 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  # Backend pytest suite excluded from public repository. The private regression
+  # corpus contains test data derived from legal documents that cannot be shared.
+
+  evaluation:
+    name: Detection Evaluation (Recall & Precision Gates)
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r apps/api/requirements.txt
+    
+    - name: Run evaluation harness
+      run: |
+        python evaluation/evaluate_rules.py
+    
+    - name: Check evaluation results
+      if: failure()
+      run: |
+        echo "❌ Detection evaluation failed!"
+        echo "Rule changes may have introduced:"
+        echo "  - Too many false positives (low precision)"
+        echo "  - PII leakage risk (low recall)"
+        echo "  - Critical category recall below 95% threshold"
+        exit 1
+
+  frontend-tests:
+    name: Frontend Tests (React + TypeScript)
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        cache-dependency-path: apps/web/package-lock.json
+    
+    - name: Install dependencies
+      run: |
+        cd apps/web
+        npm ci
+    
+    - name: Run tests
+      run: |
+        cd apps/web
+        npm test
+    
+    - name: Type check
+      run: |
+        cd apps/web
+        npx tsc --noEmit
+
+  linting:
+    name: Linting & Formatting
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Install ruff
+      run: pip install ruff
+    
+    - name: Ruff check (backend)
+      run: |
+        cd apps/api
+        ruff check . --output-format=github
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        cache-dependency-path: apps/web/package-lock.json
+    
+    - name: Install frontend dependencies
+      run: |
+        cd apps/web
+        npm ci
+    
+    - name: ESLint check (frontend)
+      run: |
+        cd apps/web
+        npm run lint
+
+  docker-build:
+    name: Docker Build Test
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Build Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: false
+        tags: deid-legaltech:test
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    
+    - name: Test health endpoint
+      run: |
+        docker run -d --name deid-test -p 8000:8000 deid-legaltech:test
+        sleep 10
+        curl -f http://localhost:8000/api/health || exit 1
+        docker stop deid-test

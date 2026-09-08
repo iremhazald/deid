@@ -1,0 +1,51 @@
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Python virtual environments
+.venv/
+venv/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Python packaging artifacts
+*.egg-info/
+
+# Test and coverage artifacts
+.pytest_cache/
+.coverage
+coverage/
+htmlcov/
+
+# Node dependencies and build output
+node_modules/
+dist/
+
+# Runtime output directories
+outputs/
+redacted_outputs/
+
+# Temporary and debug directories
+.tmp/
+.tmp-debug/
+_tmp*/
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Model weights (downloaded at runtime)
+*.onnx
+
+# Document artifacts (privacy protection)
+*.pdf
+*.docx
+
+# Private test suite (excluded from public repository)
+# The private regression corpus contains data derived from legal documents.
+# This exclusion allows developers to restore it locally for internal testing
+# without risk of accidental commit.
+apps/api/tests/

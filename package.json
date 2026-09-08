@@ -1,0 +1,12 @@
+{
+  "name": "legal-document-redaction",
+  "private": true,
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "npm run dev --prefix apps/web",
+    "dev:api": "python -m uvicorn app.main:app --app-dir apps/api --reload --port 8000",
+    "build": "npm run build --prefix apps/web",
+    "preview": "npm run preview --prefix apps/web",
+    "test:web": "npm run test --prefix apps/web"
+  }
+}

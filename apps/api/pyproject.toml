@@ -1,0 +1,17 @@
+[project]
+name = "legal-redaction-api"
+version = "0.1.0"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[project.optional-dependencies]
+zemberek = ["zemberek-python>=0.2.3", "setuptools"]
+local-ner-tr = ["transformers>=4.40,<5", "onnxruntime>=1.17"]
+local-ner-tr-pytorch = ["transformers>=4.40,<5", "torch>=2.2"]
+local-ner-en = ["spacy>=3.7,<4"]
+local-ner = ["transformers>=4.40,<5", "onnxruntime>=1.17", "spacy>=3.7,<4"]
+
