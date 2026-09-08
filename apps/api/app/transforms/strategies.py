@@ -109,7 +109,8 @@ def initials_value(original: str, trailing_suffix: str = "") -> str:
     initials = ".".join(part[0].upper() for part in parts if part) + "."
     if not trailing_suffix:
         return initials
-    return f"{initials}'{trailing_suffix.lstrip("'’")}"
+    clean_suffix = trailing_suffix.lstrip("'’")
+    return f"{initials}'{clean_suffix}"
 
 
 COURT_ORDINAL_TAG = "X"
