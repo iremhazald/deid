@@ -72,6 +72,9 @@ describe("PdfPageViewer page hydration", () => {
           height: 842,
           spans: [],
         }))}
+        onSelect={() => undefined}
+        onPageInView={() => undefined}
+        onDrawComplete={() => undefined}
       />,
     );
     expect(html.match(/pdf-page-wrap/g)?.length).toBe(8);

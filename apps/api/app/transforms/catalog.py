@@ -283,8 +283,6 @@ ROLE_ALIASES: dict[str, str] = {
     "mubasir": "BAILIFF",
     "mağdur": "VICTIM",
     "magdur": "VICTIM",
-    "müşteki": "COMPLAINANT",
-    "musteki": "COMPLAINANT",
     "hesap sahibi": "ACCOUNT_HOLDER",
     "hat sahibi": "PHONE_HOLDER",
     "kart sahibi": "CARD_HOLDER",

@@ -25,7 +25,6 @@ def iter_char_chunks(text: str, *, max_chars: int, overlap: int) -> Iterator[Tex
     if len(text) <= max_chars:
         yield TextChunk(text=text, origin=0)
         return
-    step = max(1, max_chars - max(0, overlap))
     start = 0
     length = len(text)
     while start < length:

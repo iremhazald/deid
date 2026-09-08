@@ -34,8 +34,6 @@ _PARTY_TYPES = {EntityType.CLAIMANT_NAME, EntityType.DEFENDANT_NAME}
 
 def _block_end(text: str, value_start: int) -> int:
     limit = min(len(text), value_start + _MAX_BLOCK)
-    window = text[value_start:limit]
-    next_party = _OPEN.search(window, 1) if window.startswith("\n") else _OPEN.search(window)
     # Search remaining text for another party opener or a section header.
     rest = text[value_start:limit]
     candidates = []

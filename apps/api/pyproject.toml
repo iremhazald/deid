@@ -15,3 +15,30 @@ local-ner-tr-pytorch = ["transformers>=4.40,<5", "torch>=2.2"]
 local-ner-en = ["spacy>=3.7,<4"]
 local-ner = ["transformers>=4.40,<5", "onnxruntime>=1.17", "spacy>=3.7,<4"]
 
+[tool.ruff]
+# Target Python 3.11+
+target-version = "py311"
+
+[tool.ruff.lint]
+# Focus on correctness rules (F-series) that catch actual bugs.
+# Style rules (I001, SIM, UP, etc.) are informational but not CI-blocking
+# for this historical codebase. New code should follow best practices.
+select = [
+    "F",      # Pyflakes - correctness (unused imports, undefined names, etc.)
+    "E9",     # Runtime errors (syntax errors, etc.)
+    "W6",     # Deprecated features
+]
+
+# Specific rules to ignore even within selected categories
+ignore = [
+    "F401",   # Unused imports - some are for re-export or TYPE_CHECKING blocks
+]
+
+# Files/directories to exclude from linting
+exclude = [
+    "__pycache__",
+    ".git",
+    ".venv",
+    "venv",
+]
+
