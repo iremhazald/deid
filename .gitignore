@@ -27,6 +27,7 @@ dist/
 # Runtime output directories
 outputs/
 redacted_outputs/
+evaluation/runs/
 
 # Temporary and debug directories
 .tmp/

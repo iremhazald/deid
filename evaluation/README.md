@@ -50,6 +50,12 @@ Categories that **require NER** for full coverage (isolated names without role
 context, locations, dates in prose) should be evaluated in **LOCAL_CONTEXT**
 mode which includes local NER models.
 
+## Matching
+
+A prediction matches a gold entity when both have the same type and the span
+overlap IoU is **at least 0.5**. Each prediction is paired with the unmatched
+gold span that has the highest IoU. An overlap of exactly 0.5 counts.
+
 ## Thresholds
 
 - Overall precision ≥ 75%
@@ -64,7 +70,15 @@ PERSON_NAME and CREDIT_CARD are excluded from critical 95% recall gates because:
 
 ```bash
 python evaluation/evaluate_rules.py
+python evaluation/evaluate_rules.py --output evaluation/runs/custom.json
+python evaluation/evaluate_rules.py --compare evaluation/runs/before.json evaluation/runs/after.json
 ```
+
+The default command is the CI gate. It scores the legacy detector list plus
+structural label hits, without the product merge that runs after those
+detectors. Each run writes `evaluation/runs/<utc>-legacy_rules.json`.
+`--compare` prints precision, recall, F1, and count deltas between two saved
+files and does not apply the gates.
 
 Configurations to compare:
 
