@@ -3,6 +3,7 @@ import {
   collapseForList,
   effectiveStrategy,
   groupCollapsedByFamily,
+  isActionableFinding,
   listRowId,
   manualItemId,
   manualKindKey,
@@ -21,6 +22,7 @@ import {
   subcategoryForEntityType,
   subcategoryLabelKey,
 } from "../../state/presentationTaxonomy";
+import { fragmentHost } from "../../state/fragmentHost";
 import type {
   CategoryDefaults,
   DecisionAction,
@@ -84,6 +86,7 @@ type Props = {
   onManualMerge?: (entityIds: string[]) => void | Promise<void>;
   mergeNotice?: string | null;
   onReclassify?: (entityId: string, entityType: string) => void | Promise<void>;
+  onRemoveFindings?: (entityIds: string[]) => void;
 };
 
 export function DetectionList({
@@ -119,6 +122,7 @@ export function DetectionList({
   onManualMerge,
   mergeNotice = null,
   onReclassify,
+  onRemoveFindings,
 }: Props) {
   const { preserved } = useMemo(
     () =>
@@ -162,8 +166,19 @@ export function DetectionList({
     const rowId = listRowId(activeId, entities);
     const entity = entities.find((item) => item.id === rowId);
     if (!entity) return;
-    setPane("detections");
-    onShowPreservedChange?.(false);
+    const kept = !isActionableFinding(
+      entity,
+      decisions,
+      categoryDefaults,
+      entityStrategies,
+    );
+    if (kept) {
+      setPane("kept");
+      onShowPreservedChange?.(true);
+    } else {
+      setPane("detections");
+      onShowPreservedChange?.(false);
+    }
     const groupId = presentationGroupForEntityType(entity.type);
     const family = families.find((item) => item.id === groupId);
     setOpenGroup(groupId);
@@ -220,6 +235,24 @@ export function DetectionList({
     menuOpen: activeRowId === id && !methodsDismissed,
     onMenuOpenChange: (open: boolean) => setMethodsDismissed(!open),
   });
+
+  const rowEditing = {
+    onRemove: onRemoveFindings,
+  };
+
+  const revealAdded = (record: CustomTermHistoryItem) => {
+    setCustomHistory((current) => [...current, record]);
+    setPane("detections");
+    const groupId = presentationGroupForEntityType(record.category);
+    const family = families.find((item) => item.id === groupId);
+    setOpenGroup(groupId);
+    setOpenSubcategory(
+      family && !family.flattened
+        ? subcategoryForEntityType(record.category)
+        : null,
+    );
+    onShowPreservedChange?.(false);
+  };
 
   const selectAndDecide = (
     id: string,
@@ -353,6 +386,7 @@ export function DetectionList({
           occurrenceHidden={(id) => decisions[id] === "REDACT"}
           activeOccurrenceId={activeId}
           {...rowMenu(entity.id)}
+          {...rowEditing}
         />
       ))}
     </ul>
@@ -456,19 +490,7 @@ export function DetectionList({
                     ),
                   );
                 }}
-                onAdded={(record) => {
-                  setCustomHistory((current) => [...current, record]);
-                  setPane("detections");
-                  const groupId = presentationGroupForEntityType(record.category);
-                  const family = families.find((item) => item.id === groupId);
-                  setOpenGroup(groupId);
-                  setOpenSubcategory(
-                    family && !family.flattened
-                      ? subcategoryForEntityType(record.category)
-                      : null,
-                  );
-                  onShowPreservedChange?.(false);
-                }}
+                onAdded={revealAdded}
               />
             </>
           ) : (
@@ -522,6 +544,16 @@ export function DetectionList({
                       occurrenceHidden={(id) => decisions[id] === "REDACT"}
                       activeOccurrenceId={activeId}
                       {...rowMenu(entity.id)}
+                      {...rowEditing}
+                      fragmentHost={(() => {
+                        const host = fragmentHost(entity, entities);
+                        return host ? { id: host.id, text: host.text } : null;
+                      })()}
+                      onMergeFragment={
+                        onRemoveFindings
+                          ? () => onRemoveFindings([entity.id])
+                          : undefined
+                      }
                     />
                   ))}
                 </ul>

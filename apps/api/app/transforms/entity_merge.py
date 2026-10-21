@@ -231,6 +231,50 @@ def reclassify_entities(job: Job, entity_ids: list[str], entity_type: EntityType
     return restamp_analysis(job)
 
 
+def edit_entity_span(job: Job, entity_id: str, start: int, end: int):
+    """Move one finding onto a user-corrected range of the unchanged analysis text."""
+    if not job.analysis:
+        raise ValueError("ANALYSIS_REQUIRED")
+    text = job.analysis.text
+    if start < 0 or end > len(text) or start >= end:
+        raise ValueError("ENTITY_SPAN_INVALID")
+    surface = text[start:end]
+    if not surface.strip():
+        raise ValueError("ENTITY_SPAN_INVALID")
+    target = next((item for item in job.analysis.entities if item.id == entity_id), None)
+    if target is None:
+        raise ValueError("ENTITY_NOT_FOUND")
+    for item in job.analysis.entities:
+        if item.id != entity_id and item.start < end and start < item.end:
+            raise ValueError("ENTITY_SPAN_OVERLAP")
+    page = 0
+    offset = 0
+    for index, page_text in enumerate(job.page_texts or [text]):
+        if offset <= start < offset + len(page_text):
+            page = index
+            break
+        offset += len(page_text)
+    attributes = dict(target.attributes or {})
+    attributes["edited"] = True
+    updated = [
+        item.model_copy(
+            update={
+                "text": surface,
+                "start": start,
+                "end": end,
+                "page": page,
+                "needs_review": False,
+                "attributes": attributes,
+            }
+        )
+        if item.id == entity_id
+        else item
+        for item in job.analysis.entities
+    ]
+    job.analysis = job.analysis.model_copy(update={"entities": updated})
+    return restamp_analysis(job)
+
+
 def reject_entity_match(job: Job, entity_ids: list[str]):
     if not job.analysis:
         raise ValueError("ANALYSIS_REQUIRED")

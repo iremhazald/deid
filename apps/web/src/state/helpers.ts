@@ -27,6 +27,8 @@ import {
   subcategoryOrder,
 } from './presentationTaxonomy'
 
+export { locateCorrectedSpan } from './findingSpan'
+
 export function isReviewRecommended(entity: Entity): boolean {
   if (entity.needs_review) return true
   return false
@@ -143,15 +145,39 @@ export function seedDecisions(
   )
 }
 
+export type StrategySeedOptions = {
+  workspaceMode?: string | null
+}
+
+/** Text workspace reads as running prose, so the default method is a label. */
+function textWorkspaceLabels(options?: StrategySeedOptions): boolean {
+  return options?.workspaceMode === 'TEXT'
+}
+
+function textWorkspaceCategoryStrategy(
+  type: string,
+  entities: Entity[],
+  catalog: TransformCatalog | null,
+  preset: PurposePreset,
+): TransformationStrategy {
+  const fallback = categoryStrategyForPreset(type, entities, catalog, preset)
+  if (preset !== 'ANONYMIZED') return fallback
+  if (!allowedStrategiesFor(type, catalog).includes('PLACEHOLDER')) return fallback
+  return 'PLACEHOLDER'
+}
+
 export function seedCategoryDefaults(
   entities: Entity[],
   catalog: TransformCatalog | null,
   preset: PurposePreset = 'ANONYMIZED',
+  options?: StrategySeedOptions,
 ): CategoryDefaults {
   const defaults: CategoryDefaults = {}
   for (const entity of entities) {
     if (defaults[entity.type]) continue
-    defaults[entity.type] = categoryStrategyForPreset(entity.type, entities, catalog, preset)
+    defaults[entity.type] = textWorkspaceLabels(options)
+      ? textWorkspaceCategoryStrategy(entity.type, entities, catalog, preset)
+      : categoryStrategyForPreset(entity.type, entities, catalog, preset)
   }
   return defaults
 }
@@ -160,9 +186,11 @@ export function seedEntityStrategies(
   entities: Entity[],
   catalog: TransformCatalog | null,
   preset: PurposePreset = 'ANONYMIZED',
+  options?: StrategySeedOptions,
 ): EntityStrategies {
   const next: EntityStrategies = {}
   if (preset === 'DETECT_ONLY') return next
+  if (textWorkspaceLabels(options) && preset === 'ANONYMIZED') return next
   for (const entity of entities) {
     if (isReviewRecommended(entity)) {
       const recommended = catalogStrategyFor(entity.type, catalog, entity)
@@ -215,8 +243,9 @@ export function mergeCategoryDefaults(
   previous: CategoryDefaults,
   catalog: TransformCatalog | null,
   preset: PurposePreset = 'ANONYMIZED',
+  options?: StrategySeedOptions,
 ): CategoryDefaults {
-  const seeded = seedCategoryDefaults(entities, catalog, preset)
+  const seeded = seedCategoryDefaults(entities, catalog, preset, options)
   return { ...seeded, ...previous }
 }
 
@@ -934,6 +963,39 @@ export function labelCourtOrdinals(text: string, tag = COURT_ORDINAL_TAG) {
   return text.replace(/\b\d{1,3}\s*\./g, tag)
 }
 
+function courtHasOrdinal(text: string) {
+  return /\b\d{1,3}\s*\./.test(text)
+}
+
+function isDutyCourt(text: string) {
+  return /(?<![\p{L}\p{N}_])n[oö]bet[cç]i(?![\p{L}\p{N}_])/iu.test(text)
+}
+
+function previewCourtValue(
+  text: string,
+  language: string,
+  options?: {
+    placeholderToken?: string | null
+    entity?: Entity
+    entities?: Entity[]
+  },
+) {
+  if (courtHasOrdinal(text)) return labelCourtOrdinals(text)
+  if (isDutyCourt(text)) return text
+  const stamped = options?.placeholderToken?.trim()
+  if (stamped) return stamped
+  const peers = (options?.entities ?? [])
+    .filter(
+      (item) =>
+        item.type === 'COURT_NAME' && !courtHasOrdinal(item.text) && !isDutyCourt(item.text),
+    )
+    .sort((left, right) => left.start - right.start || left.id.localeCompare(right.id))
+  const index = options?.entity
+    ? Math.max(1, peers.findIndex((item) => item.id === options.entity?.id) + 1)
+    : 1
+  return `[${placeholderLabel('COURT_NAME', language)}_${index || 1}]`
+}
+
 function partialMaskDateOfBirth(text: string) {
   const matches = [...text.matchAll(/\d+/g)]
   if (!matches.length) return '█'.repeat(Math.max(1, text.length))
@@ -1001,7 +1063,7 @@ export function previewEntityValue(
   if (strategy === 'KEEP') return text
   if (strategy === 'REDACT') return '█'.repeat(Math.max(3, Math.min(text.length, 14)))
   if (strategy === 'PLACEHOLDER') {
-    if (type === 'COURT_NAME') return labelCourtOrdinals(text)
+    if (type === 'COURT_NAME') return previewCourtValue(text, language, options)
     if (options?.placeholderToken?.trim()) return options.placeholderToken.trim()
     if (options?.entity && options.entities?.length) {
       return placeholderTokensByEntityId(options.entities, language).get(options.entity.id)

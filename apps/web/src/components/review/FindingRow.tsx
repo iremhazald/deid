@@ -34,6 +34,9 @@ type Props = {
   onMenuOpenChange?: (open: boolean) => void;
   typeOptions?: string[];
   onTypeChange?: (entityType: string) => void;
+  onRemove?: (entityIds: string[]) => void;
+  fragmentHost?: { id: string; text: string } | null;
+  onMergeFragment?: () => void;
 };
 
 export function FindingRow({
@@ -56,6 +59,9 @@ export function FindingRow({
   onMenuOpenChange,
   typeOptions = [],
   onTypeChange,
+  onRemove,
+  fragmentHost = null,
+  onMergeFragment,
 }: Props) {
   const related = relatedEntityIds(entity.id, entities)
     .map((id) => entities.find((item) => item.id === id))
@@ -174,7 +180,36 @@ export function FindingRow({
             {occurrenceText}
           </button>
         )}
+        {fragmentHost && onMergeFragment && (
+          <p className="finding-fragment">
+            <span>{t("workspace.fragmentOf", { host: fragmentHost.text })}</span>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onMergeFragment();
+              }}
+            >
+              {t("workspace.fragmentMerge")}
+            </button>
+          </p>
+        )}
       </div>
+      {onRemove && (
+        <button
+          type="button"
+          className="finding-remove"
+          aria-label={t("workspace.removeFindingNamed", { name: entity.text })}
+          title={t("workspace.contextRemoveFinding")}
+          onClick={(event) => {
+            event.stopPropagation();
+            onRemove(related.map((item) => item.id));
+          }}
+        >
+          ×
+        </button>
+      )}
       {methods.length > 0 && active && (
         <button
           type="button"

@@ -14,7 +14,9 @@ from app.domain.models import (
     AuditReport,
     DocumentKind,
     ResolutionState,
+    SourceDocumentType,
     UserDefinedTerm,
+    WorkspaceMode,
 )
 
 
@@ -33,6 +35,10 @@ class Job:
     source_path: Path
     document_kind: DocumentKind
     created_at: float
+    source_document_type: SourceDocumentType | None = None
+    workspace_mode: WorkspaceMode = WorkspaceMode.DOCUMENT
+    copy_text: str | None = None
+    derived_downloads: dict[str, tuple[Path, str, str]] = field(default_factory=dict)
     last_accessed: float = 0.0
     analysis: AnalysisResponse | None = None
     output_path: Path | None = None
@@ -51,17 +57,17 @@ class Job:
     requested_document_language: str | None = None
     resolution_state: ResolutionState = field(default_factory=ResolutionState)
     page_render_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
-    _pdf: Any = field(default=None, repr=False)
+    _pdf: Any | None = field(default=None, repr=False)
 
     def close_resources(self) -> None:
         document = self._pdf
         self._pdf = None
-        closer = getattr(document, "close", None)
-        if callable(closer):
-            try:
-                closer()
-            except Exception:
-                pass
+        if document is None:
+            return
+        try:
+            document.close()
+        except Exception:
+            pass
 
 
 class JobStore:
@@ -84,6 +90,9 @@ class JobStore:
         file_name: str,
         content: bytes,
         document_kind: DocumentKind = DocumentKind.PDF,
+        *,
+        workspace_mode: WorkspaceMode = WorkspaceMode.DOCUMENT,
+        source_document_type: SourceDocumentType | None = None,
     ) -> Job:
         self.cleanup()
         job_id = str(uuid4())
@@ -91,7 +100,22 @@ class JobStore:
         safe_name = Path(file_name).name
         source = directory / safe_name
         source.write_bytes(content)
-        job = Job(job_id, directory, source, document_kind, time.time(), last_accessed=time.time())
+        if source_document_type is None and document_kind == DocumentKind.PDF:
+            source_document_type = SourceDocumentType.PDF
+        elif source_document_type is None and document_kind == DocumentKind.DOCX:
+            source_document_type = SourceDocumentType.DOCX
+        elif source_document_type is None and document_kind == DocumentKind.UDF:
+            source_document_type = SourceDocumentType.UDF
+        job = Job(
+            job_id,
+            directory,
+            source,
+            document_kind,
+            time.time(),
+            last_accessed=time.time(),
+            source_document_type=source_document_type,
+            workspace_mode=workspace_mode,
+        )
         self._jobs[job_id] = job
         return job
 

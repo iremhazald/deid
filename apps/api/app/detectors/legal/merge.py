@@ -11,6 +11,7 @@ from app.detectors.legal.names import (
     is_non_person_surface,
     is_uets_label_surface,
     take_person_name,
+    trailing_case_cut,
     uets_number_span,
 )
 from app.detectors.textutil import fold_tr_identity
@@ -356,6 +357,15 @@ def _score(item: EntityCandidate) -> tuple[int, int, int, int, int, int]:
 _LEADING_DETERMINERS = frozenset({"the", "a", "an", "this", "that"})
 
 
+def _has_professional_title(text: str) -> bool:
+    return bool(
+        re.match(
+            r"(?i)^(?:prof(?:essor)?|dr|avukat|av|h[âa]k[iı]m|yarg[ıi][çc])\.?",
+            text.strip(),
+        )
+    )
+
+
 def _overlaps(left: EntityCandidate, right: EntityCandidate) -> bool:
     return left.page == right.page and left.start < right.end and right.start < left.end
 
@@ -513,6 +523,7 @@ def _clip_person_candidates(candidates: list[EntityCandidate]) -> list[EntityCan
         if item.type not in _PERSON:
             kept.append(item)
             continue
+        item = _expose_case_suffix(item)
         if item.detector in {
             "TR_NAME_REPEAT",
             "TR_NAME_PAIR",
@@ -524,6 +535,12 @@ def _clip_person_candidates(candidates: list[EntityCandidate]) -> list[EntityCan
             "EN_SIGNATURE_PERSON",
             "EN_NARRATIVE_PERSON",
         } or item.attributes.get("parent_role"):
+            kept.append(item)
+            continue
+        if re.match(
+            r"(?i)^(?:prof(?:essor)?|dr|avukat|av|h[âa]k[iı]m|yarg[ıi][çc])\.?",
+            item.text.strip(),
+        ):
             kept.append(item)
             continue
         clipped = _person_value_span(item.text)
@@ -544,6 +561,19 @@ def _clip_person_candidates(candidates: list[EntityCandidate]) -> list[EntityCan
             continue
         kept.append(_resized(item, name, rel_start, rel_end))
     return kept
+
+
+def _expose_case_suffix(item: EntityCandidate) -> EntityCandidate:
+    """Leave ``'ın`` and other case endings outside the labeled span.
+
+    ``Av. Mehmet Yılmaz'ın`` labels ``Av. Mehmet Yılmaz``. The apostrophe and
+    the ending stay in the document. A capitalized piece such as ``O'Brien``
+    is not an ending and is left intact. Professional titles stay inside.
+    """
+    cut = trailing_case_cut(item.text)
+    if cut is None or cut <= 0:
+        return item
+    return _resized(item, item.text[:cut], 0, cut)
 
 
 def _resized(item: EntityCandidate, value: str, rel_start: int, rel_end: int) -> EntityCandidate:
@@ -697,7 +727,7 @@ def _drop_inside_ibans(candidates: list[EntityCandidate]) -> list[EntityCandidat
 
 def _drop_courts_without_chamber(candidates: list[EntityCandidate]) -> list[EntityCandidate]:
     """Keep high courts and chambered local courts; drop petition addressees."""
-    from app.detectors.legal.court import court_ordinal, is_high_court_name
+    from app.detectors.legal.court import court_ordinal, is_duty_court, is_high_court_name
 
     kept: list[EntityCandidate] = []
     for item in candidates:
@@ -717,6 +747,9 @@ def _drop_courts_without_chamber(candidates: list[EntityCandidate]) -> list[Enti
         if ordinal:
             kept.append(item)
             continue
+        if is_duty_court(item.text):
+            continue
+        kept.append(item)
     return kept
 
 
@@ -809,6 +842,12 @@ def merge_rule_candidates(candidates: list[EntityCandidate]) -> list[EntityCandi
                 continue
             other_group = _group_of(other.type)
             if group and group == other_group:
+                if _has_professional_title(item.text) and _contains(item, other):
+                    kept = [kept_item for kept_item in kept if kept_item.id != other.id]
+                    continue
+                if _has_professional_title(other.text) and _contains(other, item):
+                    conflict = True
+                    break
                 conflict = True
                 break
             if item.type == other.type:

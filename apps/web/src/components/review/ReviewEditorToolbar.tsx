@@ -20,6 +20,7 @@ type Props = {
   page: number
   pageCount: number
   textSelectAvailable: boolean
+  geometryTools?: boolean
   t: (key: string, options?: Record<string, unknown>) => string
   onTool: (tool: EditorTool) => void
   onViewMode: (mode: DocumentViewMode) => void
@@ -45,6 +46,7 @@ export function ReviewEditorToolbar({
   page,
   pageCount,
   textSelectAvailable,
+  geometryTools = true,
   t,
   onTool,
   onViewMode,
@@ -92,20 +94,24 @@ export function ReviewEditorToolbar({
           <span className="review-chrome-rule" aria-hidden="true" />
 
           <div className="review-chrome-tools" role="toolbar" aria-label={t('workspace.tools')}>
-            <ToolButton
-              active={tool === 'redact-area'}
-              icon={<MaskIcon />}
-              label={t('workspace.toolRedactArea')}
-              shortcut="R"
-              onClick={() => onTool('redact-area')}
-            />
-            <ToolButton
-              active={tool === 'add-text'}
-              icon={<TextIcon />}
-              label={t('workspace.toolAddText')}
-              shortcut="T"
-              onClick={() => onTool('add-text')}
-            />
+            {geometryTools && (
+              <ToolButton
+                active={tool === 'redact-area'}
+                icon={<MaskIcon />}
+                label={t('workspace.toolRedactArea')}
+                shortcut="R"
+                onClick={() => onTool('redact-area')}
+              />
+            )}
+            {geometryTools && (
+              <ToolButton
+                active={tool === 'add-text'}
+                icon={<TextIcon />}
+                label={t('workspace.toolAddText')}
+                shortcut="T"
+                onClick={() => onTool('add-text')}
+              />
+            )}
             {textSelectAvailable && (
               <ToolButton
                 active={tool === 'select-text'}

@@ -4,6 +4,9 @@ import { AnimatedRedactionText } from '../hero/AnimatedRedactionText'
 import type { DocumentLanguage } from '../../state/documentLanguage'
 import { DocumentLanguagePicker } from './DocumentLanguagePicker'
 import { LocalScanStart } from './LocalScanStart'
+import { WorkspaceModeChooser } from './WorkspaceModeChooser'
+import { asksWorkspaceMode, type WorkspaceMode } from '../../state/workspaceMode'
+import { isDocxFileName, isUdfFileName } from '../../state/types'
 import { DropZone } from './DropZone'
 import { PrivacyNotice } from './PrivacyNotice'
 import { UploadGuidance } from './UploadGuidance'
@@ -36,6 +39,8 @@ type Props = {
   selectedFileName?: string
   documentLanguage: DocumentLanguage
   onDocumentLanguageChange: (value: DocumentLanguage) => void
+  workspaceMode: WorkspaceMode | null
+  onWorkspaceModeChange: (value: WorkspaceMode) => void
 }
 
 type View = 'hero' | 'leaving' | 'upload'
@@ -70,6 +75,8 @@ export function UploadHero({
   selectedFileName,
   documentLanguage,
   onDocumentLanguageChange,
+  workspaceMode,
+  onWorkspaceModeChange,
 }: Props) {
   const [view, setView] = useState<View>(() => {
     return window.location.hash === '#upload' ? 'upload' : 'hero'
@@ -114,6 +121,8 @@ export function UploadHero({
         selectedFileName={selectedFileName}
         documentLanguage={documentLanguage}
         onDocumentLanguageChange={onDocumentLanguageChange}
+        workspaceMode={workspaceMode}
+        onWorkspaceModeChange={onWorkspaceModeChange}
       />
     )
   }
@@ -181,6 +190,8 @@ type UploadScreenProps = {
   selectedFileName?: string
   documentLanguage: DocumentLanguage
   onDocumentLanguageChange: (value: DocumentLanguage) => void
+  workspaceMode: WorkspaceMode | null
+  onWorkspaceModeChange: (value: WorkspaceMode) => void
 }
 
 export function UploadScreen({
@@ -199,6 +210,8 @@ export function UploadScreen({
   selectedFileName,
   documentLanguage,
   onDocumentLanguageChange,
+  workspaceMode,
+  onWorkspaceModeChange,
 }: UploadScreenProps) {
   return (
     <section className="upload-form">
@@ -222,6 +235,27 @@ export function UploadScreen({
           t={t}
           onChange={onDocumentLanguageChange}
         />
+        {asksWorkspaceMode(selectedFileName) && (
+          <WorkspaceModeChooser
+            value={workspaceMode}
+            t={t}
+            onChange={onWorkspaceModeChange}
+          />
+        )}
+        {selectedFileName && isDocxFileName(selectedFileName) && (
+          <p className="upload-docx-note">
+            {t('docxUpload.source')}
+            <br />
+            {t('docxUpload.workspace')}
+          </p>
+        )}
+        {selectedFileName && isUdfFileName(selectedFileName) && (
+          <p className="upload-docx-note">
+            {t('udfUpload.source')}
+            <br />
+            {t('udfUpload.workspace')}
+          </p>
+        )}
       </div>
 
       <UploadGuidance t={t} />
@@ -229,6 +263,14 @@ export function UploadScreen({
       <LocalScanStart
         hasFile={Boolean(selectedFileName)}
         hasLanguage={documentLanguage !== null && documentLanguage !== 'auto'}
+        hasWorkspace={
+          Boolean(
+            selectedFileName
+            && (isDocxFileName(selectedFileName) || isUdfFileName(selectedFileName)),
+          )
+          || workspaceMode === 'DOCUMENT'
+          || workspaceMode === 'TEXT'
+        }
         t={t}
         onStart={onStartScan}
       />

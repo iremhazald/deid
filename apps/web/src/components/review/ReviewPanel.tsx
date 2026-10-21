@@ -63,6 +63,7 @@ type Props = {
   onManualMerge?: (entityIds: string[]) => void | Promise<void>;
   mergeNotice?: string | null;
   onReclassify?: (entityId: string, entityType: string) => void | Promise<void>;
+  onRemoveFindings?: (entityIds: string[]) => void;
 };
 
 export function ReviewPanel({
@@ -96,6 +97,7 @@ export function ReviewPanel({
   onManualMerge,
   mergeNotice = null,
   onReclassify,
+  onRemoveFindings,
 }: Props) {
   const analysisStatus = analysisStatusOf(analysis);
   const empty = analysis.entities.length === 0 && manual.length === 0;
@@ -197,6 +199,7 @@ export function ReviewPanel({
         onManualMerge={onManualMerge}
         mergeNotice={mergeNotice}
         onReclassify={onReclassify}
+        onRemoveFindings={onRemoveFindings}
       />
     </aside>
   );

@@ -356,7 +356,13 @@ def parse_organisations(page: PageText) -> list[EntityCandidate]:
             continue
         add(match, "PUBLIC_AUTHORITY", EntityType.ORGANISATION, 1)
     for match in _LOCAL_DESK.finditer(page.text):
-        add(match, "LOCAL_DESK", EntityType.LOCATION, "span")
+        # AGO is Adli Görüşme Odası: a city desk that is masked as an institution.
+        # BAM stays a place label; the court grammar owns the mahkeme span.
+        unit = (match.group("unit") or "").upper()
+        if unit == "AGO":
+            add(match, "JUDICIAL_INTERVIEW_ROOM", EntityType.ORGANISATION, "span")
+        else:
+            add(match, "LOCAL_DESK", EntityType.LOCATION, "span")
     return found
 
 

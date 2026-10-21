@@ -4,6 +4,7 @@ import {
   addCustomTerms,
   analyzeDocument,
   deleteJob,
+  editEntitySpan,
   fetchTransformCatalog,
   mergeEntityMatch,
   reclassifyEntities,
@@ -57,17 +58,20 @@ import type {
 } from "./state/types";
 import { isAcceptedUpload, MAX_FILE_MB } from "./state/types";
 import {
+  workspaceModeForSelectedFile,
+  type WorkspaceMode,
+} from "./state/workspaceMode";
+import {
   analyzeLanguagePayload,
   documentTagLanguage,
   nextDocumentLanguageAfterUiSwitch,
   type DocumentLanguage,
 } from "./state/documentLanguage";
-import {
-  analyzeModeForNormalScan,
-} from "./state/scanFlow";
+import { analyzeModeForNormalScan } from "./state/scanFlow";
 
 function languagePath(language?: string) {
-  const code = language ?? (window.location.pathname.startsWith("/en") ? "en" : "tr");
+  const code =
+    language ?? (window.location.pathname.startsWith("/en") ? "en" : "tr");
   return code === "en" ? "/en" : "/";
 }
 
@@ -107,11 +111,16 @@ function App() {
   const [error, setError] = useState("");
   const [processStep, setProcessStep] = useState(0);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode | null>(
+    null,
+  );
   const [customTerms, setCustomTerms] = useState<UserDefinedTerm[]>([]);
   const [flashEntityIds, setFlashEntityIds] = useState<string[]>([]);
   const [removedEntityIds, setRemovedEntityIds] = useState<string[]>([]);
-  const [documentLanguage, setDocumentLanguage] = useState<DocumentLanguage>(null);
-  const [purposePreset, setPurposePreset] = useState<PurposePreset>("ANONYMIZED");
+  const [documentLanguage, setDocumentLanguage] =
+    useState<DocumentLanguage>(null);
+  const [purposePreset, setPurposePreset] =
+    useState<PurposePreset>("ANONYMIZED");
 
   const locale = (i18n.language.startsWith("tr") ? "tr" : "en") as "tr" | "en";
   const tagLanguage = analysis ? documentTagLanguage(analysis) : locale;
@@ -125,7 +134,10 @@ function App() {
   const workflowIndex =
     result || phase === "export"
       ? 2
-      : analysis || phase === "review" || phase === "processing" || phase === "validating"
+      : analysis ||
+          phase === "review" ||
+          phase === "processing" ||
+          phase === "validating"
         ? 1
         : 0;
 
@@ -202,8 +214,16 @@ function App() {
     setTokenOverrides({});
     setProfile(data.profile ?? "GENERAL");
     setDecisions(seedDecisions(data.entities, preset));
-    setCategoryDefaults(seedCategoryDefaults(data.entities, nextCatalog, preset));
-    setEntityStrategies(seedEntityStrategies(data.entities, nextCatalog, preset));
+    setCategoryDefaults(
+      seedCategoryDefaults(data.entities, nextCatalog, preset, {
+        workspaceMode: data.workspace_mode,
+      }),
+    );
+    setEntityStrategies(
+      seedEntityStrategies(data.entities, nextCatalog, preset, {
+        workspaceMode: data.workspace_mode,
+      }),
+    );
     setServerPreview(null);
     setActiveId(null);
     setFlashEntityIds([]);
@@ -215,7 +235,7 @@ function App() {
     setPhase("review");
   };
 
-  const upload = async (file: File) => {
+  const upload = async (file: File, mode: WorkspaceMode) => {
     setPhase("processing");
     setError("");
     setResult(null);
@@ -224,15 +244,11 @@ function App() {
         catalog ?? (await fetchTransformCatalog().catch(() => null));
       if (nextCatalog) setCatalog(nextCatalog);
       receive(
-        await analyzeDocument(
-          file,
-          "GENERAL",
-          analyzeModeForNormalScan(),
-          {
-            customTerms,
-            documentLanguage: analyzeLanguagePayload(documentLanguage, locale),
-          },
-        ),
+        await analyzeDocument(file, "GENERAL", analyzeModeForNormalScan(), {
+          customTerms,
+          documentLanguage: analyzeLanguagePayload(documentLanguage, locale),
+          workspaceMode: mode,
+        }),
         nextCatalog,
       );
     } catch (cause) {
@@ -246,12 +262,15 @@ function App() {
   const holdFile = (file: File) => {
     if (!isAcceptedUpload(file)) return;
     setPendingFile(file);
+    setWorkspaceMode(null);
     setError("");
   };
 
   const startScan = () => {
     if (!pendingFile) return;
-    void upload(pendingFile);
+    const mode = workspaceModeForSelectedFile(pendingFile.name, workspaceMode);
+    if (!mode) return;
+    void upload(pendingFile, mode);
   };
 
   const changeProfile = async (next: PrivacyProfile) => {
@@ -266,7 +285,15 @@ function App() {
         mergeProfileDecisions(updated.entities, current, analysis.entities),
       );
       setCategoryDefaults((current) =>
-        mergeCategoryDefaults(updated.entities, current, catalog, purposePreset),
+        mergeCategoryDefaults(
+          updated.entities,
+          current,
+          catalog,
+          purposePreset,
+          {
+            workspaceMode: analysis.workspace_mode,
+          },
+        ),
       );
       setAnalysis(updated);
       setTokenOverrides({});
@@ -300,11 +327,12 @@ function App() {
         const related = relatedEntityIds(entity.id, analysis.entities);
         const source = !entityStrategies[entity.id]
           ? ("default" as const)
-          : related.length > 1
-              && related.some((id) => (
-                (entityStrategies[id] ?? categoryDefaults[entity.type])
-                !== strategy
-              ))
+          : related.length > 1 &&
+              related.some(
+                (id) =>
+                  (entityStrategies[id] ?? categoryDefaults[entity.type]) !==
+                  strategy,
+              )
             ? ("occurrence_override" as const)
             : ("user_override" as const);
         const rectangles = exportRectanglesForEntity(
@@ -333,9 +361,11 @@ function App() {
       ),
       manual: manual.filter((item) => !item.kept),
       outputFormat:
-        analysis.document_kind === "TEXT"
-          ? outputFormat
-          : analysis.document_kind,
+        analysis.workspace_mode === "TEXT"
+          ? "TXT"
+          : analysis.document_kind === "TEXT"
+            ? outputFormat
+            : analysis.document_kind,
       locale: tagLanguage,
       initialsFontSize,
     };
@@ -426,6 +456,7 @@ function App() {
     setActiveId(null);
     setError("");
     setPendingFile(null);
+    setWorkspaceMode(null);
     setRemovedEntityIds([]);
     setPurposePreset("ANONYMIZED");
     setPhase("upload");
@@ -553,12 +584,21 @@ function App() {
     }
   };
 
+  const applyEditSpan = async (entityId: string, start: number, end: number) => {
+    if (!analysis) return;
+    const updated = await editEntitySpan(analysis.job_id, entityId, start, end);
+    setAnalysis(updated);
+    setTokenOverrides({});
+  };
+
   const isWorkspace = phase === "review";
   const showWorkflow =
     phase === "processing" || phase === "validating" || phase === "export";
 
   return (
-    <div className={`app-shell${phase === "upload" ? " landing" : ""}${isWorkspace ? " is-review" : ""}`}>
+    <div
+      className={`app-shell${phase === "upload" ? " landing" : ""}${isWorkspace ? " is-review" : ""}`}
+    >
       <Header
         brand={t("brand")}
         language={i18n.language}
@@ -628,6 +668,8 @@ function App() {
             selectedFileName={pendingFile?.name}
             documentLanguage={documentLanguage}
             onDocumentLanguageChange={setDocumentLanguage}
+            workspaceMode={workspaceMode}
+            onWorkspaceModeChange={setWorkspaceMode}
           />
         )}
 
@@ -733,6 +775,7 @@ function App() {
             onMergeMatch={(entityIds) => applyMatch(entityIds, "merge")}
             onKeepSeparateMatch={(entityIds) => applyMatch(entityIds, "reject")}
             onReclassify={applyReclassify}
+            onEditSpan={applyEditSpan}
             onAddCustomTerm={(term) => {
               if (!analysis) {
                 return Promise.reject(new Error("ANALYSIS_REQUIRED"));
@@ -773,7 +816,7 @@ function App() {
                     for (const id of addedIds) next[id] = applied;
                     return next;
                   });
-                  setActiveId(addedIds[0] ?? null);
+                  if (term.starts == null) setActiveId(addedIds[0] ?? null);
                   setFlashEntityIds(addedIds);
                 })
                 .catch((cause) => {
@@ -807,6 +850,21 @@ function App() {
             failBody={t("exportFailBody")}
             warnTitle={t("exportWarnTitle")}
             warnBody={t("exportWarnBody")}
+            copyLabel={t("copyText")}
+            copiedLabel={t("textCopied")}
+            textReadyTitle={t("textReadyTitle")}
+            downloadNewDocxLabel={t("downloadNewDocx")}
+            downloadNewDocxNotice={t("downloadNewDocxNotice")}
+            downloadNewPdfLabel={
+              analysis.source_document_type === "UDF"
+                ? t("downloadNewPdfFromUdf")
+                : t("downloadNewPdf")
+            }
+            downloadNewPdfNotice={
+              analysis.source_document_type === "UDF"
+                ? t("downloadNewPdfFromUdfNotice")
+                : t("downloadNewPdfNotice")
+            }
             onReset={() => setPhase("review")}
           />
         )}

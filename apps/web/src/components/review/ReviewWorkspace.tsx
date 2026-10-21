@@ -3,12 +3,17 @@ import {
   analysisStatusOf,
   effectiveStrategy,
   findManualById,
+  isActionableFinding,
   manualItemId,
   relatedEntityIds,
   restoreStrategyFor,
   usesPaperRedaction,
 } from "../../state/helpers";
-import { DEFAULT_TEXT_SIZE, defaultRedactFill, TRANSPARENT_FILL } from "./documentFonts";
+import {
+  DEFAULT_TEXT_SIZE,
+  defaultRedactFill,
+  TRANSPARENT_FILL,
+} from "./documentFonts";
 import type {
   Analysis,
   CategoryDefaults,
@@ -39,6 +44,7 @@ import {
   shouldOpenDocumentContextMenu,
 } from "../../state/findingContextMenu";
 import { personMergeRoleConflict } from "../../state/manualMerge";
+import { showsPdfPageViewer } from "../../state/workspaceMode";
 
 function newManualId() {
   return crypto.randomUUID();
@@ -93,6 +99,7 @@ type Props = {
   onMergeMatch?: (entityIds: string[]) => void | Promise<void>;
   onKeepSeparateMatch?: (entityIds: string[]) => void | Promise<void>;
   onReclassify?: (entityId: string, entityType: string) => void | Promise<void>;
+  onEditSpan?: (entityId: string, start: number, end: number) => Promise<void>;
   flashEntityIds?: string[];
   boxOverrides?: Record<string, ManualRect[]>;
   entityFills?: Record<string, string>;
@@ -121,6 +128,7 @@ export function ReviewWorkspace(props: Props) {
     onBulk,
   } = props;
 
+  const textWorkspace = analysis.workspace_mode === "TEXT";
   const [tool, setTool] = useState<EditorTool>("select");
   const [viewMode, setViewMode] = useState<DocumentViewMode>("detections");
   const [showPreserved, setShowPreserved] = useState(false);
@@ -157,12 +165,24 @@ export function ReviewWorkspace(props: Props) {
   const future = useRef<Snapshot[]>([]);
   const [, setHistoryTick] = useState(0);
   const flashEntityIds = props.flashEntityIds ?? [];
+  const [panelFlashId, setPanelFlashId] = useState<string | null>(null);
 
   useEffect(() => {
     if (flashEntityIds.length === 0) return;
     setViewMode("detections");
     viewPinned.current = false;
   }, [flashEntityIds]);
+
+  useEffect(() => {
+    if (!panelFlashId) return;
+    const timer = window.setTimeout(() => setPanelFlashId(null), 720);
+    return () => window.clearTimeout(timer);
+  }, [panelFlashId]);
+
+  useEffect(() => {
+    document.body.classList.toggle("is-finding-focus", tool === "select-text");
+    return () => document.body.classList.remove("is-finding-focus");
+  }, [tool]);
 
   useEffect(() => {
     viewPinned.current = false;
@@ -172,11 +192,18 @@ export function ReviewWorkspace(props: Props) {
     setManualMergeSourceId(null);
     setMergeNotice(null);
     setRemovedToast(false);
-  }, [analysis.job_id]);
+    setTool("select");
+  }, [analysis.job_id, analysis.workspace_mode]);
 
   const analysisStatus = analysisStatusOf(analysis);
-  const extraWarnings = analysis.warnings.filter((warning) => !warning.startsWith("AI_"));
-  const textSelectAvailable = analysis.document_kind !== "PDF";
+  const extraWarnings = analysis.warnings.filter(
+    (warning) => !warning.startsWith("AI_"),
+  );
+  const pdfDocumentWorkspace = showsPdfPageViewer(
+    analysis.document_kind,
+    analysis.workspace_mode,
+  );
+  const textSelectAvailable = !pdfDocumentWorkspace;
 
   const snapshot = useCallback(
     (): Snapshot => ({
@@ -261,6 +288,21 @@ export function ReviewWorkspace(props: Props) {
     setCustomZoom(DETECTION_FOCUS_ZOOM);
     const entity = analysis.entities.find((item) => item.id === id);
     if (entity) setCurrentPage(entity.page + 1);
+  };
+
+  const selectFromPanel = (id: string | null, rectIndex = 0) => {
+    markInspected(id, rectIndex);
+    if (!id) return;
+    setViewMode("detections");
+    const entity = analysis.entities.find((item) => item.id === id);
+    if (
+      entity &&
+      !isActionableFinding(entity, decisions, categoryDefaults, entityStrategies)
+    ) {
+      setShowPreserved(true);
+    }
+    setPanelFlashId(null);
+    window.setTimeout(() => setPanelFlashId(id), 30);
   };
 
   const selectManualFromList = (id: string) => {
@@ -406,7 +448,7 @@ export function ReviewWorkspace(props: Props) {
     clientY: number,
     _rectIndex = 0,
   ) => {
-    if (!shouldOpenDocumentContextMenu(viewMode, tool)) return;
+    if (!textWorkspace && !shouldOpenDocumentContextMenu(viewMode, tool)) return;
     selectFindingQuietly(entityId);
     setManualMergeSourceId(null);
     setContextMenu({ entityId, x: clientX, y: clientY });
@@ -416,16 +458,22 @@ export function ReviewWorkspace(props: Props) {
     ? analysis.entities.find((item) => item.id === contextMenu.entityId)
     : undefined;
 
-  const removeFinding = (entityId: string) => {
+  const removeFindings = (entityIds: string[]) => {
+    if (entityIds.length === 0) return;
     record();
-    const next = [...(props.removedEntityIds ?? []), entityId];
+    const removed = new Set(entityIds);
+    const next = [...new Set([...(props.removedEntityIds ?? []), ...entityIds])];
     props.onRemovedEntityIdsChange?.(next);
     setContextMenu(null);
-    if (activeId === entityId) onSelect(null);
-    if (focusId === entityId) setFocusId(null);
-    if (manualMergeSourceId === entityId) setManualMergeSourceId(null);
+    if (activeId && removed.has(activeId)) onSelect(null);
+    if (focusId && removed.has(focusId)) setFocusId(null);
+    if (manualMergeSourceId && removed.has(manualMergeSourceId)) {
+      setManualMergeSourceId(null);
+    }
     setRemovedToast(true);
   };
+
+  const removeFinding = (entityId: string) => removeFindings([entityId]);
 
   const startManualMerge = (entityId: string) => {
     const entity = analysis.entities.find((item) => item.id === entityId);
@@ -446,7 +494,10 @@ export function ReviewWorkspace(props: Props) {
     const target = analysis.entities.find((item) => item.id === entityIds[1]);
     const typesOf = (id: string) =>
       relatedEntityIds(id, analysis.entities)
-        .map((related) => analysis.entities.find((item) => item.id === related)?.type)
+        .map(
+          (related) =>
+            analysis.entities.find((item) => item.id === related)?.type,
+        )
         .filter((type): type is string => Boolean(type));
     const conflict =
       source && target && isMergeType(source.type) && source.type !== "ADDRESS"
@@ -530,6 +581,10 @@ export function ReviewWorkspace(props: Props) {
   });
 
   useEffect(() => {
+    const exitFindingFocus = () => {
+      setTool((current) => (current === "select-text" ? "select" : current));
+      window.getSelection()?.removeAllRanges();
+    };
     const onPointerDown = (event: PointerEvent) => {
       const raw = event.target;
       const target =
@@ -539,6 +594,13 @@ export function ReviewWorkspace(props: Props) {
             ? raw.parentElement
             : null;
       if (!target) return;
+      if (tool === "select-text") {
+        const onPage =
+          target.closest(".text-doc-page") != null ||
+          target.closest(".selection-popup") != null;
+        const onToolbar = target.closest(".review-editor-toolbar") != null;
+        if (event.button === 2 || (!onPage && !onToolbar)) exitFindingFocus();
+      }
       if (Date.now() < skipPopoverDismiss.current) return;
       if (target.closest(".manual-area-pop")) return;
       if (target.closest(".selection-popup")) return;
@@ -555,7 +617,7 @@ export function ReviewWorkspace(props: Props) {
         dismissManual();
         return;
       }
-      if (target.closest(".pdf-resize")) return;
+      if (target.closest(".pdf-resize") || target.closest(".text-span-resize")) return;
       if (target.closest(".pdf-entity") || target.closest(".doc-entity"))
         return;
       if (target.closest(".entity-mark") || target.closest(".is-manual"))
@@ -570,8 +632,15 @@ export function ReviewWorkspace(props: Props) {
       clearDocumentSelection();
     };
 
+    const onContextMenu = () => {
+      if (tool === "select-text") exitFindingFocus();
+    };
     window.addEventListener("pointerdown", onPointerDown, true);
-    return () => window.removeEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("contextmenu", onContextMenu, true);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("contextmenu", onContextMenu, true);
+    };
   }, [draftArea, tool, dismissManual, clearDocumentSelection]);
 
   const zoomPercent = Math.round(customZoom * 100);
@@ -586,6 +655,7 @@ export function ReviewWorkspace(props: Props) {
         page={currentPage}
         pageCount={analysis.page_count}
         textSelectAvailable={textSelectAvailable}
+        geometryTools={analysis.workspace_mode !== "TEXT"}
         t={t}
         onTool={(next) =>
           setTool((current) => (current === next ? "select" : next))
@@ -602,12 +672,8 @@ export function ReviewWorkspace(props: Props) {
         canRedo={future.current.length > 0}
         onUndo={handleUndo}
         onRedo={handleRedo}
-        onZoomOut={() =>
-          setCustomZoom((value) => clampZoom(value - ZOOM_STEP))
-        }
-        onZoomIn={() =>
-          setCustomZoom((value) => clampZoom(value + ZOOM_STEP))
-        }
+        onZoomOut={() => setCustomZoom((value) => clampZoom(value - ZOOM_STEP))}
+        onZoomIn={() => setCustomZoom((value) => clampZoom(value + ZOOM_STEP))}
         onZoomReset={() => setCustomZoom(1)}
         onPageChange={setCurrentPage}
       />
@@ -627,8 +693,10 @@ export function ReviewWorkspace(props: Props) {
           <DocumentViewer
             jobId={analysis.job_id}
             documentKind={analysis.document_kind}
+            workspaceMode={analysis.workspace_mode}
             pageCount={analysis.page_count}
             pageTexts={analysis.page_texts}
+            pageLayouts={analysis.page_layouts}
             pageSpans={analysis.page_spans}
             pagePreviews={analysis.page_previews}
             text={analysis.text}
@@ -639,7 +707,11 @@ export function ReviewWorkspace(props: Props) {
             manual={manual}
             selectedManualId={selectedManualId}
             activeId={activeId}
-            flashEntityIds={flashEntityIds}
+            flashEntityIds={
+              panelFlashId
+                ? [...new Set([...flashEntityIds, panelFlashId])]
+                : flashEntityIds
+            }
             focusId={focusId}
             focusRectIndex={focusRectIndex}
             currentPage={currentPage}
@@ -652,6 +724,7 @@ export function ReviewWorkspace(props: Props) {
             t={t}
             onSelect={markInspected}
             onFindingContextMenu={openFindingContextMenu}
+            onEditSpan={props.onEditSpan}
             onSelectManual={(id) => {
               setSelectedManualId(id);
               if (id) onSelect(null);
@@ -713,10 +786,13 @@ export function ReviewWorkspace(props: Props) {
               const layout = analysis.page_spans?.find(
                 (page) => page.page === rect.page,
               );
-              const pageEl = document.getElementById(`pdf-page-${rect.page + 1}`);
+              const pageEl = document.getElementById(
+                `pdf-page-${rect.page + 1}`,
+              );
               const canvas = pageEl?.querySelector(".pdf-page-canvas");
               const bounds = canvas?.getBoundingClientRect();
-              const width = layout?.width && layout.width > 0 ? layout.width : 595;
+              const width =
+                layout?.width && layout.width > 0 ? layout.width : 595;
               const height =
                 layout?.height && layout.height > 0 ? layout.height : 842;
               const box = bounds
@@ -814,7 +890,7 @@ export function ReviewWorkspace(props: Props) {
           initialsFontSize={props.initialsFontSize ?? DEFAULT_TEXT_SIZE}
           onInitialsFontSizeChange={props.onInitialsFontSizeChange}
           t={t}
-          onSelect={markInspected}
+          onSelect={selectFromPanel}
           onSelectManual={selectManualFromList}
           selectedManualId={selectedManualId}
           onDecision={wrap(onDecision)}
@@ -831,8 +907,12 @@ export function ReviewWorkspace(props: Props) {
           onMergeMatch={props.onMergeMatch}
           onKeepSeparateMatch={props.onKeepSeparateMatch}
           onReclassify={props.onReclassify}
+          onRemoveFindings={removeFindings}
           showPreserved={showPreserved}
-          onShowPreservedChange={setShowPreserved}
+          onShowPreservedChange={(show) => {
+            setShowPreserved(show);
+            setViewMode("detections");
+          }}
           manualMergeSourceId={manualMergeSourceId}
           onCancelManualMerge={cancelManualMerge}
           onManualMerge={mergeFromPanel}

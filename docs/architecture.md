@@ -57,6 +57,40 @@ cannot stall the event loop and make the API unreachable.
 Unmappable selected spans block export. A failed validation does not persist a
 downloadable output.
 
+## PDF text workspace (unreleased)
+
+After a PDF upload, unreleased V2 work can open the text workspace instead of
+the page viewer. Extraction, OCR, and detection stay on the existing local
+pipeline. Findings use the extracted source text. The transformed text can be
+copied. This workspace does not rebuild a PDF. Secure PDF export remains on
+the page workspace.
+
+## DOCX text input (unreleased)
+
+DOCX support is in progress and is not a released V2 surface. A DOCX upload is
+classified from the package, not the file extension alone, and always opens the
+text workspace. Extraction walks the document body in reading order, then
+appends headers and footers. It does not preserve fonts, colors, or page
+geometry, and it does not extract images, text boxes, comments, footnotes,
+equations, or embedded objects. Those parts can still contain text that is not
+inspected.
+
+The same local detection pipeline used for other text runs afterward. No
+DOCX-specific detector, NER model, or external AI service is added. Copied
+text and any downloaded DOCX or PDF are produced from the transformed text.
+Those downloads are new documents. They do not rewrite the original Word file.
+
+## UYAP UDF text input (unreleased)
+
+UYAP Editor `.udf` support is in progress and is not a released V2 surface.
+A supported file is a ZIP package with `content.xml`, root element `template`,
+and `format_id` 1.7 or 1.8. The document text is the template `content` value.
+`sign.sgn`, when present, is signature material and is not read as text, copied
+into output, or reissued. DeID does not reproduce the UYAP page layout and does
+not export `.udf`. The existing text workspace can copy the transformed text
+and download a new PDF built only from that text. No external AI or document
+service is used.
+
 ## Privacy Boundary
 
 The FastAPI process stores active jobs in an operating-system temporary

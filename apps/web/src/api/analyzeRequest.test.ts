@@ -40,7 +40,26 @@ describe('normal analyze request', () => {
     expect(captured.body?.get('mode')).not.toBe('HYBRID')
     expect(captured.body?.get('mode')).not.toBe('RULES_ONLY')
     expect(captured.body?.get('document_language')).toBe('auto')
+    expect(captured.body?.has('workspace_mode')).toBe(false)
     expect(String(captured.url)).toContain('/api/documents/analyze')
+  })
+
+  it('sends TEXT workspace only when the caller chooses it', async () => {
+    const captured: { body?: FormData } = {}
+    vi.stubGlobal(
+      'fetch',
+      async (_url: string | URL, init?: RequestInit) => {
+        captured.body = init?.body as FormData
+        return jsonResponse()
+      },
+    )
+    const file = new File(['%PDF-'], 'claim.pdf', { type: 'application/pdf' })
+    await analyzeDocument(file, 'GENERAL', analyzeModeForNormalScan(), {
+      documentLanguage: 'tr',
+      workspaceMode: 'TEXT',
+    })
+    expect(captured.body?.get('workspace_mode')).toBe('TEXT')
+    expect(captured.body?.get('mode')).toBe('LOCAL_CONTEXT')
   })
 
   it('sends LOCAL_CONTEXT even when the caller omits mode', async () => {
@@ -58,6 +77,7 @@ describe('normal analyze request', () => {
     await analyzeDocument(file)
     expect(captured.body?.get('mode')).toBe('LOCAL_CONTEXT')
     expect(captured.body?.has('mode')).toBe(true)
+    expect(captured.body?.has('workspace_mode')).toBe(false)
   })
 
   it('retries through reanalyze without a mode body', async () => {
@@ -88,5 +108,9 @@ describe('normal UI source contract', () => {
     expect(client).not.toContain('enrich-ai')
     expect(client).not.toContain('HYBRID')
     expect(client).not.toContain('/api/ai/')
+    expect(client.toLowerCase()).not.toContain('openai')
+    expect(client.toLowerCase()).not.toContain('chatgpt')
+    expect(client.toLowerCase()).not.toContain('api key')
+    expect(client.toLowerCase()).not.toContain('api_key')
   })
 })

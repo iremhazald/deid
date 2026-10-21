@@ -25,6 +25,23 @@ const base = {
   onPageChange: () => undefined,
 }
 
+describe('ReviewEditorToolbar text workspace', () => {
+  it('hides page geometry tools and keeps text selection', () => {
+    const html = renderToStaticMarkup(
+      <ReviewEditorToolbar
+        {...base}
+        textSelectAvailable
+        geometryTools={false}
+        tool="select-text"
+        zoomPercent={100}
+      />,
+    )
+    expect(html).toContain('workspace.toolSelectText')
+    expect(html).not.toContain('workspace.toolRedactArea')
+    expect(html).not.toContain('workspace.toolAddText')
+  })
+})
+
 describe('ReviewEditorToolbar zoom limits', () => {
   it('disables minus at 40% and plus at 170%', () => {
     const min = renderToStaticMarkup(<ReviewEditorToolbar {...base} zoomPercent={40} />)

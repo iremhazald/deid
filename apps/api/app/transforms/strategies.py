@@ -453,9 +453,11 @@ def transform_entity(
     elif strategy == TransformationStrategy.PLACEHOLDER:
         if entity.type == EntityType.COURT_NAME:
             labeled = label_court_ordinals(original)
-            if labeled == original:
-                return None
-            replacement = labeled
+            if labeled != original:
+                replacement = labeled
+            else:
+                token = (entity.placeholder_token or "").strip()
+                replacement = token or "[MAHKEME_1]"
             export_path = "secure_pdf"
         else:
             start, end, original, suffix = _span_and_suffix(text, entity)

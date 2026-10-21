@@ -459,6 +459,35 @@ describe('seedCategoryDefaults', () => {
     expect(defaults.NATIONAL_ID).toBe('REDACT')
   })
 
+  it('defaults allowed categories to a label in the text workspace', () => {
+    const entities = [
+      entity({
+        id: 'p',
+        type: 'PERSON_NAME',
+        recommended: true,
+        recommended_strategy: 'PARTIAL_MASK',
+      }),
+      entity({
+        id: 'a',
+        type: 'ADDRESS',
+        recommended: true,
+        recommended_strategy: 'REDACT',
+      }),
+      entity({
+        id: 'e',
+        type: 'EMAIL',
+        recommended: true,
+        recommended_strategy: 'PARTIAL_MASK',
+      }),
+    ]
+    const defaults = seedCategoryDefaults(entities, catalog, 'ANONYMIZED', { workspaceMode: 'TEXT' })
+    expect(defaults.PERSON_NAME).toBe('PLACEHOLDER')
+    expect(defaults.ADDRESS).toBe('PLACEHOLDER')
+    expect(defaults.EMAIL).toBe('PARTIAL_MASK')
+    expect(seedEntityStrategies(entities, catalog, 'ANONYMIZED', { workspaceMode: 'TEXT' })).toEqual({})
+    expect(seedCategoryDefaults(entities, catalog, 'ANONYMIZED').ADDRESS).toBe('REDACT')
+  })
+
   it('keeps every category in detect-only preset', () => {
     const defaults = seedCategoryDefaults([
       entity({ id: 'a', type: 'EMAIL', recommended: true }),
@@ -915,6 +944,12 @@ describe('previewEntityValue', () => {
     expect(previewEntityValue('33110', 'POSTAL_CODE', 'PLACEHOLDER', 'tr')).toBe('[POSTA_KODU]')
     expect(previewEntityValue('Ankara 1. Asliye Hukuk Mahkemesi', 'COURT_NAME', 'PLACEHOLDER', 'tr')).toBe(
       'Ankara X Asliye Hukuk Mahkemesi',
+    )
+    expect(previewEntityValue('Seydişehir Asliye Hukuk Mahkemesi', 'COURT_NAME', 'PLACEHOLDER', 'tr')).toBe(
+      '[MAHKEME_1]',
+    )
+    expect(previewEntityValue('Adana Nöbetçi Sulh Hukuk Mahkemesi', 'COURT_NAME', 'PLACEHOLDER', 'tr')).toBe(
+      'Adana Nöbetçi Sulh Hukuk Mahkemesi',
     )
     expect(previewEntityValue('Kadıköy', 'LOCATION', 'PLACEHOLDER', 'tr')).toBe('[KONUM_1]')
     expect(previewEntityValue('19.05.1992', 'DATE_OF_BIRTH', 'PLACEHOLDER', 'tr')).toBe('[DOĞUM_TARİHİ_1]')

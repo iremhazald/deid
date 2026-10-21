@@ -262,7 +262,23 @@ npm run test:web
 - **Not anonymization** — De-identification reduces identifiability but does not
   guarantee that re-identification is impossible. Contextual and quasi-identifying
   information may remain.
-- **PDF focus** — V1 focuses on PDF workflows.
+- **PDF page workspace** — V1 PDF review and secure PDF export are unchanged.
+- **PDF text workspace, not released** — Unreleased V2 work asks, after a PDF is
+  selected, whether to use the page workspace or extracted text. Text review
+  uses the same local extraction, OCR, and detection pipeline. The transformed
+  text can be copied. That workspace does not download a new PDF. Secure PDF
+  export stays on the page workspace.
+- **UYAP UDF, not released** — Unreleased V2 work can read a UYAP Editor `.udf`
+  package as text. DeID does not reproduce the original UYAP layout and does
+  not preserve or reissue the electronic signature. UDF export is not
+  supported. The transformed text can be copied, and a new PDF can be
+  downloaded from that text. No external AI or document service is used.
+- **DOCX, not released** — Unreleased V2 work can read a DOCX as text. The text
+  workspace does not preserve Word formatting or page layout. Headers and
+  footers are appended after the body. Images, text boxes, comments, footnotes,
+  equations, and embedded objects may not be extracted. A downloaded DOCX or
+  PDF is a new document built from the transformed text, not a redaction of the
+  original Word file. Detection stays on-device; no external AI service is used.
 - **English coverage** — English support is English-General, not jurisdiction-
   specific (no UK NINO, US SSN, etc.).
 - **Ambiguous identities** — Abbreviated or partial name references may require

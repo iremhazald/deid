@@ -1,6 +1,11 @@
+import type { SourceDocumentType, WorkspaceMode } from './workspaceMode'
+
+export type { SourceDocumentType, WorkspaceMode } from './workspaceMode'
+
 export type PrivacyProfile = 'GENERAL' | 'GDPR' | 'KVKK' | 'GDPR_KVKK' | 'CUSTOM'
 export type PurposePreset = 'ANONYMIZED' | 'STRICT_PRODUCTION' | 'DETECT_ONLY'
 export type DecisionAction = 'REDACT' | 'KEEP'
+
 export type OutputFormat = 'TXT' | 'PDF' | 'DOCX'
 export type DetectionMethod = 'DETERMINISTIC' | 'STRUCTURAL' | 'AI' | 'MANUAL'
 export type DocumentKind = 'PDF' | 'DOCX' | 'TEXT'
@@ -83,6 +88,8 @@ export type Analysis = {
   job_id: string
   file_name: string
   document_kind: DocumentKind
+  source_document_type?: SourceDocumentType | null
+  workspace_mode?: WorkspaceMode | null
   document_hash?: string
   page_count: number
   text: string
@@ -101,6 +108,21 @@ export type Analysis = {
     }>
   }>
   page_previews?: Array<{ page: number; image: string }>
+  page_layouts?: Array<{
+    page: number
+    width: number
+    height: number
+    runs: Array<{
+      start: number
+      end: number
+      x0: number
+      y0: number
+      x1: number
+      y1: number
+      size: number
+      bold?: boolean
+    }>
+  }>
   entities: Entity[]
   detectors_executed?: string[]
   warnings: string[]
@@ -179,10 +201,12 @@ export type Result = {
     }>
   }
   download_url: string | null
+  downloads?: Array<{ format: 'DOCX' | 'PDF'; url: string }>
   audit_url: string
+  copy_text?: string | null
   saved_path?: string
   saved_audit_path?: string
-  export_path?: 'secure_pdf' | 'text_rebuild'
+  export_path?: 'secure_pdf' | 'text_rebuild' | 'text_copy'
   output_mode?: 'original_layout'
   strategy_counts?: Record<string, number>
   analysis_status?: AnalysisStatus
@@ -260,11 +284,26 @@ export type PreviewResponse = {
 export const PROFILES: PrivacyProfile[] = ['GENERAL', 'GDPR', 'KVKK', 'GDPR_KVKK', 'CUSTOM']
 
 
-export const ACCEPTED_FILES = 'application/pdf,.pdf'
+export const ACCEPTED_FILES =
+  'application/pdf,.pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.udf'
+
+export function isPdfFileName(name: string): boolean {
+  return name.toLowerCase().endsWith('.pdf')
+}
+
+export function isDocxFileName(name: string): boolean {
+  return name.toLowerCase().endsWith('.docx')
+}
+
+export function isUdfFileName(name: string): boolean {
+  return name.toLowerCase().endsWith('.udf')
+}
 
 export function isAcceptedUpload(file: File): boolean {
   const name = file.name.toLowerCase()
-  return name.endsWith('.pdf') || file.type === 'application/pdf'
+  if (name.endsWith('.doc') || name.endsWith('.docm')) return false
+  if (isDocxFileName(name) || isUdfFileName(name)) return true
+  return isPdfFileName(name) || file.type === 'application/pdf'
 }
 
 export const MAX_FILE_MB = 25

@@ -57,7 +57,12 @@ export function analyzeDocument(
   file: File,
   profile: PrivacyProfile = 'GENERAL',
   mode: DetectionMode = PRODUCT_ANALYZE_MODE,
-  options?: { customTerms?: UserDefinedTerm[]; scanTypes?: string[]; documentLanguage?: 'auto' | 'tr' | 'en' },
+  options?: {
+    customTerms?: UserDefinedTerm[]
+    scanTypes?: string[]
+    documentLanguage?: 'auto' | 'tr' | 'en'
+    workspaceMode?: 'DOCUMENT' | 'TEXT'
+  },
 ) {
   const form = new FormData()
   form.append('file', file)
@@ -71,6 +76,9 @@ export function analyzeDocument(
   }
   if (options?.documentLanguage) {
     form.append('document_language', options.documentLanguage)
+  }
+  if (options?.workspaceMode) {
+    form.append('workspace_mode', options.workspaceMode)
   }
   return requestJson<Analysis>(`${API}/api/documents/analyze`, {
     method: 'POST',
@@ -111,6 +119,19 @@ export function reclassifyEntities(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ entity_ids: entityIds, entity_type: entityType }),
+  })
+}
+
+export function editEntitySpan(
+  jobId: string,
+  entityId: string,
+  start: number,
+  end: number,
+) {
+  return requestJson<Analysis>(`${API}/api/jobs/${jobId}/entities/span`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ entity_id: entityId, start, end }),
   })
 }
 

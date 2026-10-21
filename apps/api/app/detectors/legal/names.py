@@ -430,6 +430,35 @@ def strip_possessive(value: str) -> str:
     return stripped
 
 
+# Apostrophe + case ending at the end of a name token: Yılmaz'ın, YILMAZ'IN, Demir'e.
+# The ending stays in the document; the labeled span stops at the apostrophe.
+_TRAILING_CASE_SUFFIX = re.compile(
+    r"['’`´ʼ′]([A-Za-zÇĞİÖŞÜçğıöşüâîû]{1,12})[,.;:)\]]*$"
+)
+
+
+def trailing_case_cut(token: str) -> int | None:
+    """Index of the apostrophe when ``token`` ends in a visible case suffix.
+
+    ``Yılmaz'ın`` cuts at the apostrophe. ``O'Brien`` stays whole: the part
+    after the mark is a capitalized name piece, not a Turkish ending.
+    """
+    match = _TRAILING_CASE_SUFFIX.search(token)
+    if match is None:
+        return None
+    suffix = match.group(1)
+    stem = token[: match.start()].rstrip()
+    if not stem or stem[-1].isspace():
+        return None
+    last = stem.split()[-1]
+    letters = [char for char in last if char.isalpha()]
+    if len(letters) < 2:
+        return None
+    if any(char.isupper() for char in suffix) and not (last.isupper() and suffix.isupper()):
+        return None
+    return match.start()
+
+
 _ASCII_TR = str.maketrans(
     {"ğ": "g", "ü": "u", "ş": "s", "ı": "i", "ö": "o", "ç": "c", "â": "a"}
 )
@@ -660,6 +689,11 @@ def take_person_name(raw: str) -> tuple[str, int, int] | None:
         if _POSSESSIVE.match(token.strip()) and index >= 1:
             pieces = pieces[: index + 1]
             break
+    if pieces:
+        token, token_start, _token_end = pieces[-1]
+        cut = trailing_case_cut(token)
+        if cut is not None:
+            pieces[-1] = (token[:cut], token_start, token_start + cut)
     while len(pieces) > 2 and (
         _is_place(strip_possessive(pieces[-1][0])) or _is_org_abbrev(pieces[-1][0])
     ):
@@ -738,4 +772,5 @@ __all__ = [
     "iter_person_spans",
     "strip_possessive",
     "take_person_name",
+    "trailing_case_cut",
 ]

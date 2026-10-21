@@ -43,18 +43,19 @@ _NAME_THEN_ROLE = re.compile(
     rf"(?i:(?P<role>{_TRIGGER_BODY}))(?![\wÇĞİÖŞÜçğıöşü])"
 )
 _AND_NAME = re.compile(rf"(?i:\s+ve\s+)(?P<name>{_NAME_CHUNK})")
-# Courtesy / professional titles. Title stays outside the person span, matching
-# English EN_TITLED_PERSON so "Bay Yılmaz" can seed a possible-match candidate.
+# Courtesy titles stay outside the span ("Bay Yılmaz"). Professional titles
+# (Prof., Dr., Av.) are part of the labeled span, including when the period
+# is glued to the next title or the given name: "Prof.Dr.", "Dr.Mehmet".
 _COURTESY_TITLE = r"bayan|bay|say[ıi]n|sn"
 _PROFESSIONAL_TITLE = r"professor|prof|avukat|av|h[âa]k[iı]m|yarg[ıi][çc]|dr"
+_PROFESSIONAL_CHAIN = rf"(?:(?:{_PROFESSIONAL_TITLE})\.?\s*){{1,3}}"
 _COURTESY_THEN_NAME = re.compile(
     rf"(?<![\wÇĞİÖŞÜçğıöşü])(?i:(?P<title>{_COURTESY_TITLE}))"
     rf"(?:\.|(?![A-Za-zÇĞİÖŞÜçğıöşü]))\s*"
     rf"(?P<name>{_SHORT_TITLED_NAME})"
 )
 _PROFESSIONAL_THEN_NAME = re.compile(
-    rf"(?<![\wÇĞİÖŞÜçğıöşü])(?i:(?P<title>{_PROFESSIONAL_TITLE}))"
-    rf"(?:\.|(?![A-Za-zÇĞİÖŞÜçğıöşü]))\s*"
+    rf"(?<![\wÇĞİÖŞÜçğıöşü])(?i:(?P<titles>{_PROFESSIONAL_CHAIN}))"
     rf"(?P<name>{_TITLED_NAME})"
 )
 _BLOCKED_TITLED_STEMS = (
@@ -111,7 +112,13 @@ def _emit(page: PageText, name_raw: str, name_start: int, role_raw: str) -> Enti
 
 
 def _emit_titled(
-    page: PageText, name_raw: str, name_start: int, title: str
+    page: PageText,
+    name_raw: str,
+    name_start: int,
+    title: str,
+    *,
+    include_title: bool = False,
+    span_start: int | None = None,
 ) -> EntityCandidate | None:
     """Honorific / short professional title. Allows a single surname body."""
     clipped = clipped_name_span(name_raw, name_start)
@@ -129,6 +136,9 @@ def _emit_titled(
         local = name_raw.find(name) if name in name_raw else 0
         start = name_start + max(local, 0)
         end = start + len(name)
+    if include_title and span_start is not None and span_start <= start:
+        start = span_start
+        name = page.text[start:end]
     entity_type, role = _title_type(title)
     return make_candidate(
         page,
@@ -156,16 +166,26 @@ def parse_role_persons(page: PageText) -> list[EntityCandidate]:
         seen.add(key)
         found.append(candidate)
 
-    for pattern in (_COURTESY_THEN_NAME, _PROFESSIONAL_THEN_NAME):
-        for match in pattern.finditer(page.text):
-            take(
-                _emit_titled(
-                    page,
-                    match.group("name"),
-                    match.start("name"),
-                    match.group("title"),
-                )
+    for match in _COURTESY_THEN_NAME.finditer(page.text):
+        take(
+            _emit_titled(
+                page,
+                match.group("name"),
+                match.start("name"),
+                match.group("title"),
             )
+        )
+    for match in _PROFESSIONAL_THEN_NAME.finditer(page.text):
+        take(
+            _emit_titled(
+                page,
+                match.group("name"),
+                match.start("name"),
+                match.group("titles"),
+                include_title=True,
+                span_start=match.start(),
+            )
+        )
     for pattern in (_AV_THEN_NAME, _ROLE_THEN_NAME, _NAME_THEN_ROLE):
         for match in pattern.finditer(page.text):
             take(_emit(page, match.group("name"), match.start("name"), match.group("role")))

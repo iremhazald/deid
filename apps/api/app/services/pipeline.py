@@ -45,6 +45,7 @@ from app.domain.models import (
     DetectionMode,
     DocumentKind,
     EntityCandidate,
+    WorkspaceMode,
     EntityType,
     LocalNERStatus,
     PreviewOperation,
@@ -57,12 +58,15 @@ from app.domain.models import (
 )
 from app.policy.engine import POLICY_VERSION, apply_policy
 from app.services.document_processing import (
-    extract_docx,
+    extract_docx_text,
     extract_generated_output,
     extract_pdf_with_ocr,
+    pdf_text_layouts,
     write_text_output,
 )
+from app.services.udf_package import extract_udf_text
 from app.services.jobs import Job, SpanBox
+from app.transforms.copy_text import apply_copy_operations
 from app.transforms.planner import (
     apply_operations,
     build_operations,
@@ -100,6 +104,34 @@ class DocumentError(ValueError):
     pass
 
 
+def include_pdf_visual_detectors(job: Job) -> bool:
+    """QR codes and image letterheads belong on the PDF page workspace only."""
+    return (
+        job.document_kind == DocumentKind.PDF
+        and job.workspace_mode != WorkspaceMode.TEXT
+    )
+
+
+def pdf_transformation_route(
+    document_kind: DocumentKind,
+    workspace_mode: WorkspaceMode,
+    *,
+    rebuild: bool,
+) -> str:
+    """PDF text review and every DOCX review copy plain text.
+
+    PDF document mode still uses secure PDF redaction. DOCX never rewrites the
+    original Word package.
+    """
+    if document_kind in {DocumentKind.DOCX, DocumentKind.UDF}:
+        return "text_copy"
+    if document_kind == DocumentKind.PDF and workspace_mode == WorkspaceMode.TEXT:
+        return "text_copy"
+    if document_kind == DocumentKind.PDF and not rebuild:
+        return "secure_pdf"
+    return "text_rebuild"
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -129,7 +161,7 @@ def _extract_pages(document: pymupdf.Document) -> tuple[list[PageText], str]:
 
 def _extract_pdf_source(
     path: Path,
-) -> tuple[list[PageText], str, list[SpanBox], bool, int]:
+) -> tuple[list[PageText], str, list[SpanBox], bool, int, list[dict]]:
     """Open, extract and close a source PDF inside a single thread.
 
     PyMuPDF documents must not be handed across await points, so the whole
@@ -139,19 +171,22 @@ def _extract_pdf_source(
     try:
         try:
             pages, text, span_boxes, ocr_used = extract_pdf_with_ocr(document)
+            layouts = pdf_text_layouts(document, pages)
         except Exception as exc:
             raise DocumentError("OCR_FAILED") from exc
-        return pages, text, span_boxes, ocr_used, document.page_count
+        return pages, text, span_boxes, ocr_used, document.page_count, layouts
     finally:
         document.close()
 
 
-def _read_source_text(job: Job) -> str:
-    return (
-        extract_docx(job.source_path)
-        if job.document_kind == DocumentKind.DOCX
-        else job.source_path.read_text(encoding="utf-8")
-    )
+def _read_source_text(job: Job) -> tuple[str, list[str]]:
+    if job.document_kind == DocumentKind.DOCX:
+        extracted = extract_docx_text(job.source_path)
+        return extracted.text, ["DOCX_REBUILT_TEXT_ONLY", *extracted.warnings]
+    if job.document_kind == DocumentKind.UDF:
+        extracted = extract_udf_text(job.source_path)
+        return extracted.text, ["UDF_TEXT_ONLY", *extracted.warnings]
+    return job.source_path.read_text(encoding="utf-8"), []
 
 
 def _hash_source(path: Path) -> str:
@@ -169,7 +204,7 @@ async def analyze_pdf(
     mode: DetectionMode = DetectionMode.LOCAL_CONTEXT,
 ) -> AnalysisResponse:
     del ai_provider
-    pages, text, span_boxes, ocr_used, page_count = await run_in_threadpool(
+    pages, text, span_boxes, ocr_used, page_count, page_layouts = await run_in_threadpool(
         _extract_pdf_source, job.source_path
     )
     warnings = ["OCR_USED"] if ocr_used else []
@@ -181,7 +216,7 @@ async def analyze_pdf(
         warnings.append("VISUAL_ONLY_DOCUMENT")
     job.span_boxes = span_boxes
     return await _build_analysis(
-        job, pages, text, page_count, profile, warnings, mode
+        job, pages, text, page_count, profile, warnings, mode, page_layouts
     )
 
 
@@ -193,17 +228,12 @@ async def analyze_textual_document(
 ) -> AnalysisResponse:
     del ai_provider
     try:
-        text = await run_in_threadpool(_read_source_text, job)
+        text, warnings = await run_in_threadpool(_read_source_text, job)
     except (OSError, UnicodeError, ValueError) as exc:
         code = str(exc) if str(exc).isupper() else "DOCUMENT_READ_FAILED"
         raise DocumentError(code) from exc
     if not text.strip():
         raise DocumentError("EMPTY_DOCUMENT")
-    warnings = (
-        ["DOCX_REBUILT_TEXT_ONLY"]
-        if job.document_kind == DocumentKind.DOCX
-        else []
-    )
     pages = [PageText(page=0, text=text, document_offset=0)]
     return await _build_analysis(
         job, pages, text, 1, profile, warnings, mode
@@ -269,6 +299,7 @@ async def _build_analysis(
     profile: PrivacyProfile,
     warnings: list[str],
     mode: DetectionMode = DetectionMode.LOCAL_CONTEXT,
+    page_layouts: list[dict] | None = None,
 ) -> AnalysisResponse:
     requested = getattr(job, "requested_document_language", None)
     if requested is None:
@@ -294,7 +325,7 @@ async def _build_analysis(
             detectors.append("USER_DEFINED_TERM")
     candidates = apply_verification(candidates)
     candidates = filter_by_scan_types(candidates, job.scan_types)
-    if job.document_kind == DocumentKind.PDF:
+    if include_pdf_visual_detectors(job):
         letterheads = await run_in_threadpool(detect_court_letterheads, job.source_path, text)
         if letterheads:
             candidates.extend(letterheads)
@@ -384,6 +415,8 @@ async def _build_analysis(
         job_id=job.id,
         file_name=job.source_path.name,
         document_kind=job.document_kind,
+        source_document_type=job.source_document_type,
+        workspace_mode=job.workspace_mode,
         document_hash=document_hash,
         page_count=page_count,
         text=text,
@@ -408,10 +441,11 @@ async def _build_analysis(
         resolved_document_language=resolved_language,
         possible_matches=possible_matches,
         resolution_state=job.resolution_state,
+        page_layouts=page_layouts or [],
     )
     job.analysis = analysis
     job.page_texts = page_texts_list
-    if job.document_kind == DocumentKind.PDF:
+    if include_pdf_visual_detectors(job):
         try:
             page_spans = collect_page_spans(job)
         except (ValueError, TypeError, RuntimeError, OSError):
@@ -506,7 +540,7 @@ def add_custom_terms_to_analysis(job: Job, terms: list) -> AnalysisResponse:
             "resolution_state": job.resolution_state,
         }
     )
-    if job.document_kind == DocumentKind.PDF:
+    if include_pdf_visual_detectors(job):
         try:
             job.analysis = job.analysis.model_copy(update={"page_spans": collect_page_spans(job)})
         except (ValueError, TypeError, RuntimeError, OSError):
@@ -2880,6 +2914,112 @@ def _finalize_audit(
     return output_path, audit
 
 
+def _write_copy_text(path: Path, text: str) -> None:
+    path.write_text(text, encoding="utf-8")
+
+
+def _write_udf_pdf_download(
+    copy_text: str, directory: Path, stem: str
+) -> dict[str, tuple[Path, str, str]]:
+    """New PDF from transformed text. The UYAP package and signature are not reused."""
+    pdf_path = directory / "rebuilt.pdf"
+    write_text_output(copy_text, pdf_path, "PDF")
+    return {"PDF": (pdf_path, "application/pdf", f"deidentified-{stem}.pdf")}
+
+
+def _write_docx_text_downloads(
+    copy_text: str, directory: Path, stem: str
+) -> dict[str, tuple[Path, str, str]]:
+    """New documents from transformed text. The original Word package is not reused."""
+    docx_path = directory / "rebuilt.docx"
+    pdf_path = directory / "rebuilt.pdf"
+    write_text_output(copy_text, docx_path, "DOCX")
+    write_text_output(copy_text, pdf_path, "PDF")
+    return {
+        "DOCX": (
+            docx_path,
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            f"deidentified-{stem}.docx",
+        ),
+        "PDF": (pdf_path, "application/pdf", f"deidentified-{stem}.pdf"),
+    }
+
+
+async def _pdf_text_copy_export(
+    job: Job,
+    request: RedactionRequest,
+    operations: list[TransformOp],
+    ai_provider: object | None = None,
+) -> tuple[Path, AuditReport]:
+    """Copyable plain text for PDF + TEXT. Does not rewrite the original PDF."""
+    del ai_provider
+    assert job.analysis
+    by_id = {entity.id: entity for entity in job.analysis.entities}
+    selected = [
+        by_id[op.entity_id]
+        for op in operations
+        if op.entity_id and op.entity_id in by_id
+    ]
+    document_language = tag_locale_for_job(job)
+    copy_text = apply_copy_operations(job.analysis.text, operations, document_language)
+    job.copy_text = copy_text
+    if job.document_kind == DocumentKind.DOCX:
+        downloads = await run_in_threadpool(
+            _write_docx_text_downloads,
+            copy_text,
+            job.directory,
+            job.source_path.stem,
+        )
+        job.derived_downloads = downloads
+        output_path, media_type, output_name = downloads["DOCX"]
+        output_format = "DOCX"
+    elif job.document_kind == DocumentKind.UDF:
+        downloads = await run_in_threadpool(
+            _write_udf_pdf_download,
+            copy_text,
+            job.directory,
+            job.source_path.stem,
+        )
+        job.derived_downloads = downloads
+        output_path, media_type, output_name = downloads["PDF"]
+        output_format = "PDF"
+    else:
+        job.derived_downloads = {}
+        output_path = job.directory / "copy.txt"
+        await run_in_threadpool(_write_copy_text, output_path, copy_text)
+        output_format = "TXT"
+        media_type = "text/plain; charset=utf-8"
+        output_name = f"deidentified-{job.source_path.stem}.txt"
+
+    output_pages = [PageText(page=0, text=copy_text, document_offset=0)]
+    kept = _kept_entities(job.analysis.entities, operations)
+    validation = validate_operations(
+        copy_text, operations, kept_texts=[entity.text for entity in kept]
+    )
+    residual_status, residual_messages = await _residual_checks(
+        output_text=copy_text,
+        output_pages=output_pages,
+        selected_entities=selected,
+        kept_entities=kept,
+        resolved_document_language=job.locale,
+    )
+    validation = merge_residual_messages(validation, residual_messages, residual_status)
+    validation = _apply_analysis_warning(job, validation)
+    return _finalize_audit(
+        job,
+        request,
+        operations,
+        validation,
+        output_path,
+        output_format=output_format,
+        export_path="text_copy",
+        media_type=media_type,
+        output_name=output_name,
+        output_mode="original_layout",
+        source_text_extraction_method=_extraction_method(job),
+    )
+
+
 async def apply_transformations(
     job: Job,
     request: RedactionRequest,
@@ -2895,7 +3035,14 @@ async def apply_transformations(
         raise DocumentError("NO_TRANSFORMATIONS_SELECTED")
 
     rebuild = requires_text_rebuild(operations, job.document_kind == DocumentKind.PDF)
-    if job.document_kind == DocumentKind.PDF and not rebuild:
+    route = pdf_transformation_route(
+        job.document_kind,
+        job.workspace_mode,
+        rebuild=rebuild,
+    )
+    if route == "text_copy":
+        return await _pdf_text_copy_export(job, request, operations, ai_provider)
+    if route == "secure_pdf":
         return await _secure_pdf_redact(job, request, operations, ai_provider)
     return await _text_rebuild_export(job, request, operations, ai_provider)
 

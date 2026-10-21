@@ -135,4 +135,5 @@ describe('FindingContextMenu', () => {
     expect(html).not.toContain(en.workspace.strategyKeep)
     expect(html).toContain('Mehmet')
   })
+
 })

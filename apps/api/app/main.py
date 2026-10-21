@@ -14,6 +14,7 @@ from app.domain.models import (
     DetectionMode,
     DocumentKind,
     EntityMatchRequest,
+    EntitySpanEditRequest,
     PreviewRequest,
     PrivacyProfile,
     ProfileUpdateRequest,
@@ -22,13 +23,20 @@ from app.domain.models import (
     CustomTermsRequest,
     TransformationStrategy,
     UserDefinedTerm,
+    WorkspaceMode,
 )
+from app.domain.workspace import (
+    source_document_type_for_kind,
+    workspace_mode_for_upload,
+)
+from app.services.docx_preflight import UploadRejected, classify_upload
 from app.domain.scan_mode import resolve_product_analyze_mode
 from app.language.resolve import normalize_requested_language
 from app.policy.engine import apply_policy
 from app.transforms.resolution import assign_resolved_entities
 from app.transforms.entity_merge import (
     confirm_entity_merge,
+    edit_entity_span,
     reclassify_entities,
     reject_entity_match,
 )
@@ -46,6 +54,7 @@ from app.services.pipeline import (
     add_custom_terms_to_analysis,
     apply_transformations,
     collect_page_spans,
+    include_pdf_visual_detectors,
     render_job_page_png,
     persist_job_outputs,
     preview_transformations,
@@ -129,23 +138,28 @@ async def analyze(
     custom_terms: str | None = Form(None),
     scan_types: str | None = Form(None),
     document_language: str | None = Form(None),
+    workspace_mode: str | None = Form(None),
 ):
-    if not file.filename:
-        raise HTTPException(400, "FILE_NAME_REQUIRED")
-    extension = file.filename.lower().rsplit(".", 1)[-1]
-    if extension not in {"pdf", "docx"}:
-        raise HTTPException(415, "DOCUMENT_FORMAT_UNSUPPORTED")
     limit = settings.redaction_max_file_mb * 1024 * 1024
     content = await file.read(limit + 1)
     if len(content) > limit:
         raise HTTPException(413, "FILE_TOO_LARGE")
-    if extension == "pdf" and not content.startswith(b"%PDF-"):
-        raise HTTPException(400, "INVALID_PDF")
-    if extension == "docx" and not content.startswith(b"PK"):
-        raise HTTPException(400, "INVALID_DOCX")
+    try:
+        kind = classify_upload(file.filename, content)
+    except UploadRejected as exc:
+        raise HTTPException(exc.status, exc.code) from exc
     resolved_mode = resolve_product_analyze_mode(mode)
-    kind = DocumentKind.PDF if extension == "pdf" else DocumentKind.DOCX
-    job = jobs.create(file.filename, content, kind)
+    try:
+        selected_workspace = workspace_mode_for_upload(kind, workspace_mode)
+    except ValueError as exc:
+        raise HTTPException(400, "WORKSPACE_MODE_INVALID") from exc
+    job = jobs.create(
+        file.filename,
+        content,
+        kind,
+        workspace_mode=selected_workspace,
+        source_document_type=source_document_type_for_kind(kind),
+    )
     if document_language and document_language.strip():
         raw = document_language.strip()
         normalized = normalize_requested_language(raw)
@@ -279,6 +293,29 @@ async def reclassify_job_entities(job_id: str, request: ReclassifyRequest):
         raise HTTPException(409, str(exc)) from exc
 
 
+@app.post("/api/jobs/{job_id}/entities/span")
+async def edit_job_entity_span(job_id: str, request: EntitySpanEditRequest):
+    try:
+        job = jobs.get(job_id)
+    except KeyError as exc:
+        raise HTTPException(404, "JOB_NOT_FOUND") from exc
+    if not job.analysis:
+        raise HTTPException(409, "ANALYSIS_REQUIRED")
+    try:
+        analysis = await run_in_threadpool(
+            edit_entity_span, job, request.entity_id, request.start, request.end
+        )
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    if include_pdf_visual_detectors(job):
+        try:
+            analysis = analysis.model_copy(update={"page_spans": collect_page_spans(job)})
+            job.analysis = analysis
+        except (ValueError, TypeError, RuntimeError, OSError):
+            pass
+    return analysis
+
+
 @app.post("/api/jobs/{job_id}/preview")
 async def preview(job_id: str, request: PreviewRequest):
     try:
@@ -347,15 +384,31 @@ async def redact(job_id: str, request: RedactionRequest):
         logger.exception("POST /redact failed: %s", exc)
         raise HTTPException(422, str(exc)) from exc
 
+    text_copy = job.workspace_mode == WorkspaceMode.TEXT and job.document_kind in {
+        DocumentKind.PDF,
+        DocumentKind.DOCX,
+        DocumentKind.UDF,
+    }
     response = {
         "validation": audit.validation,
         "audit_url": f"/api/jobs/{job_id}/audit",
-        "download_url": f"/api/jobs/{job_id}/download",
+        "download_url": None if text_copy else f"/api/jobs/{job_id}/download",
         "export_path": audit.export_path,
         "strategy_counts": audit.strategy_counts,
         "analysis_status": audit.analysis_status,
         "ai_status": audit.ai_status,
     }
+    if text_copy:
+        response["copy_text"] = job.copy_text or ""
+    if job.derived_downloads:
+        response["downloads"] = [
+            {
+                "format": key,
+                "url": f"/api/jobs/{job_id}/download?output_format={key.lower()}",
+            }
+            for key in ("DOCX", "PDF")
+            if key in job.derived_downloads
+        ]
     try:
         saved_output, saved_audit = await run_in_threadpool(
             persist_job_outputs, job, settings.redaction_output_dir
@@ -384,8 +437,13 @@ def get_page_image(job_id: str, page_num: int, scale: float = 1.5):
         job = jobs.get(job_id)
     except KeyError as exc:
         raise HTTPException(404, "JOB_NOT_FOUND") from exc
-    if job.document_kind != DocumentKind.PDF:
-        raise HTTPException(400, "NOT_A_PDF")
+    if job.document_kind != DocumentKind.PDF or job.workspace_mode != WorkspaceMode.DOCUMENT:
+        raise HTTPException(
+            400,
+            "DOCUMENT_WORKSPACE_REQUIRED"
+            if job.document_kind == DocumentKind.PDF
+            else "NOT_A_PDF",
+        )
     if not job.source_path.exists():
         raise HTTPException(404, "JOB_NOT_FOUND")
     try:
@@ -408,8 +466,13 @@ def get_job_spans(job_id: str):
         job = jobs.get(job_id)
     except KeyError as exc:
         raise HTTPException(404, "JOB_NOT_FOUND") from exc
-    if job.document_kind != DocumentKind.PDF:
-        raise HTTPException(400, "NOT_A_PDF")
+    if job.document_kind != DocumentKind.PDF or job.workspace_mode != WorkspaceMode.DOCUMENT:
+        raise HTTPException(
+            400,
+            "DOCUMENT_WORKSPACE_REQUIRED"
+            if job.document_kind == DocumentKind.PDF
+            else "NOT_A_PDF",
+        )
     if not job.analysis:
         raise HTTPException(409, "ANALYSIS_REQUIRED")
     if not job.page_spans:
@@ -418,11 +481,19 @@ def get_job_spans(job_id: str):
 
 
 @app.get("/api/jobs/{job_id}/download")
-def download(job_id: str):
+def download(job_id: str, output_format: str | None = None):
     try:
         job = jobs.get(job_id)
     except KeyError as exc:
         raise HTTPException(404, "JOB_NOT_FOUND") from exc
+    if output_format:
+        item = job.derived_downloads.get(output_format.strip().upper())
+        if item is None:
+            raise HTTPException(404, "OUTPUT_NOT_AVAILABLE")
+        path, media_type, filename = item
+        if not path.exists():
+            raise HTTPException(409, "OUTPUT_NOT_AVAILABLE")
+        return FileResponse(path, media_type=media_type, filename=filename)
     if not job.output_path or not job.output_path.exists():
         raise HTTPException(409, "OUTPUT_NOT_AVAILABLE")
     return FileResponse(

@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     redaction_allowed_origin: str = "http://localhost:5173"
     redaction_job_ttl_seconds: int = 86400
     redaction_max_file_mb: int = 25
+    redaction_max_extracted_chars: int = 1_500_000
     redaction_output_dir: str = "outputs"
     redaction_workspace_dir: str = ""
     debug_detection: bool = False

@@ -1,17 +1,26 @@
 type Props = {
   hasFile: boolean
   hasLanguage: boolean
+  hasWorkspace: boolean
   t: (key: string, options?: Record<string, unknown>) => string
   onStart: () => void
 }
 
-export function LocalScanStart({ hasFile, hasLanguage, t, onStart }: Props) {
-  const canStart = hasFile && hasLanguage
+export function LocalScanStart({
+  hasFile,
+  hasLanguage,
+  hasWorkspace,
+  t,
+  onStart,
+}: Props) {
+  const canStart = hasFile && hasLanguage && hasWorkspace
   const hint = !hasFile
     ? t('localScan.needFile')
     : !hasLanguage
       ? t('localScan.needLanguage')
-      : null
+      : !hasWorkspace
+        ? t('workspaceChoice.needChoice')
+        : null
 
   return (
     <div className="local-scan-start">

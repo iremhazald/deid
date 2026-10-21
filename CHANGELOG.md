@@ -4,6 +4,26 @@ All notable changes and improvements to the DeID LegalTech platform.
 
 ## [Unreleased]
 
+- DeID V2 Phase 3 (not released): UYAP UDF files can be uploaded and are reviewed
+  as extracted text in the existing text workspace. DeID does not reproduce the
+  original UYAP layout and does not preserve or reissue the electronic
+  signature. UDF export is not supported. The transformed text can be copied,
+  and a new PDF can be downloaded from that text. No external AI or document
+  service is used.
+- DeID V2 Phase 2 (not released): DOCX can be uploaded and is reviewed as
+  extracted text in the existing text workspace. Word formatting and page
+  layout are not preserved. Headers and footers are appended after the body.
+  Images, text boxes, comments, footnotes, equations, SmartArt, and embedded
+  objects may not be extracted and are not inspected. Copy text uses the same
+  document-language REDACT tokens as PDF text review. "Download new DOCX" and
+  "Download PDF" create new documents from that transformed text; they are not
+  a redaction of the original Word file. No external AI service is used.
+- DeID V2 Phase 1 (not released): after a PDF is selected, choose the existing page workspace
+  or a text workspace. Text review uses the same local extraction, OCR, and
+  detection pipeline. The result can be copied as plain text. REDACT in that
+  copied text is `[GİZLENDİ]` or `[REDACTED]` according to the document
+  language. Secure PDF export stays on the page workspace. DeID does not send
+  the copied text to an external AI service.
 - DeID V1 removes generative LLM / OpenAI-compatible privacy review (`HYBRID`,
   `/api/ai/*`, enrich-ai, provider settings). Normal scan remains `LOCAL_CONTEXT`
   (deterministic detectors + on-device NER).

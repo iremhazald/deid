@@ -116,6 +116,22 @@ class PrivacyProfile(StrEnum):
 class DocumentKind(StrEnum):
     PDF = "PDF"
     DOCX = "DOCX"
+    UDF = "UDF"
+    TEXT = "TEXT"
+
+
+class SourceDocumentType(StrEnum):
+    """File format of the uploaded source. Independent of workspace mode."""
+
+    PDF = "PDF"
+    DOCX = "DOCX"
+    UDF = "UDF"
+
+
+class WorkspaceMode(StrEnum):
+    """How the user reviews the document. Independent of source file type."""
+
+    DOCUMENT = "DOCUMENT"
     TEXT = "TEXT"
 
 
@@ -258,12 +274,15 @@ class AnalysisResponse(BaseModel):
     job_id: str
     file_name: str
     document_kind: DocumentKind
+    source_document_type: SourceDocumentType | None = None
+    workspace_mode: WorkspaceMode = WorkspaceMode.DOCUMENT
     document_hash: str
     page_count: int
     text: str
     page_texts: list[str] = []  # Per-page text; empty for TEXT/DOCX documents
     page_spans: list[dict] = []  # PDF overlay boxes, computed during analysis
     page_previews: list[dict] = []  # [{page, image}] data URLs for the first rendered pages
+    page_layouts: list[dict] = []  # PDF span boxes mapped onto page_texts; presentation only
     entities: list[EntityCandidate]
     detectors_executed: list[str]
     warnings: list[str] = []
@@ -373,6 +392,12 @@ class ReclassifyRequest(BaseModel):
     entity_type: EntityType
 
 
+class EntitySpanEditRequest(BaseModel):
+    entity_id: str = Field(min_length=1)
+    start: int = Field(ge=0)
+    end: int = Field(gt=0)
+
+
 class ProfileUpdateRequest(BaseModel):
     profile: PrivacyProfile
 
@@ -428,7 +453,7 @@ class AuditReport(BaseModel):
     manual_redaction_count: int
     redaction_method: str
     strategy_counts: dict[str, int] = Field(default_factory=dict)
-    export_path: Literal["secure_pdf", "text_rebuild", "clean_layout"] = "secure_pdf"
+    export_path: Literal["secure_pdf", "text_rebuild", "clean_layout", "text_copy"] = "secure_pdf"
     output_mode: Literal["original_layout", "clean_layout"] = "original_layout"
     source_text_extraction_method: Literal["native", "ocr"] | None = None
     content_integrity_validation: Literal["pass", "fail"] | None = None

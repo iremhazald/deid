@@ -165,6 +165,57 @@ describe('ReviewPanel safety and review UX', () => {
     expect(html).not.toContain(t('workspace.showPreserved', { count: 0 }))
   })
 
+  it('offers add, edit, and remove actions for findings', () => {
+    const person = {
+      id: 'e1',
+      text: 'Ayşe Demir',
+      type: 'PERSON_NAME',
+      start: 0,
+      end: 10,
+      page: 0,
+      detector: 'TR_ROLE_PERSON',
+      method: 'DETERMINISTIC' as const,
+      validated: true,
+      recommended: true,
+    }
+    const html = renderPanel({
+      analysis: analysis({ entities: [person] }),
+      activeId: 'e1',
+      decisions: { e1: 'REDACT' },
+      categoryDefaults: { PERSON_NAME: 'PLACEHOLDER' },
+      onAddCustomTerm: () => undefined,
+      onRemoveFindings: () => undefined,
+    })
+    expect(html).not.toContain(tr.workspace.addFinding)
+    expect(html).not.toContain(tr.workspace.editFinding)
+    expect(html).not.toContain('finding-edit-remove')
+    expect(html).toContain(t('workspace.removeFindingNamed', { name: 'Ayşe Demir' }))
+  })
+
+  it('hides edit and remove when the workspace cannot apply them', () => {
+    const html = renderPanel({
+      analysis: analysis({
+        entities: [{
+          id: 'e1',
+          text: 'Ayşe Demir',
+          type: 'PERSON_NAME',
+          start: 0,
+          end: 10,
+          page: 0,
+          detector: 'TR_ROLE_PERSON',
+          method: 'DETERMINISTIC',
+          validated: true,
+          recommended: true,
+        }],
+      }),
+      activeId: 'e1',
+      decisions: { e1: 'REDACT' },
+    })
+    expect(html).not.toContain(tr.workspace.editFinding)
+    expect(html).not.toContain('finding-remove')
+    expect(html).not.toContain(tr.workspace.addFinding)
+  })
+
   it('does not mark custom detection as unavailable when a callback is wired', () => {
     const html = renderPanel({
       onAddCustomTerm: () => undefined,
@@ -1689,6 +1740,27 @@ describe('detected subcategory presentation', () => {
     })
     expect(unmasked).toContain('Rebecca Mills')
     expect(unmasked).toContain('is-preserved')
+  })
+})
+
+describe('ReviewPanel fragment merge', () => {
+  it('offers to merge an unmasked finding that sits inside another finding', () => {
+    const html = renderPanel({
+      analysis: analysis({
+        text: 'T.C. Silifke Ağır Ceza',
+        entities: [
+          finding('court', 'COURT_NAME', 'T.C. Silifke Ağır Ceza', { start: 0, end: 22 }),
+          finding('sili', 'LOCATION', 'Sili', { start: 5, end: 9 }),
+        ],
+      }),
+      decisions: { court: 'REDACT', sili: 'KEEP' },
+      categoryDefaults: { COURT_NAME: 'PLACEHOLDER', LOCATION: 'KEEP' },
+      showPreserved: true,
+      onRemoveFindings: () => undefined,
+    })
+    expect(html).toContain('Sili')
+    expect(html).toContain(t('workspace.fragmentOf', { host: 'T.C. Silifke Ağır Ceza' }))
+    expect(html).toContain(tr.workspace.fragmentMerge)
   })
 })
 

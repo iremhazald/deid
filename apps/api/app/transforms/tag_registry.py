@@ -378,6 +378,40 @@ def build_document_tag_registry(
     )
 
 
+def _number_unnumbered_courts(
+    entities: list[EntityCandidate], locale: str
+) -> list[EntityCandidate]:
+    """Courts with no chamber number are labeled [MAHKEME_n], not left as prose.
+
+    Numbered chambers stay on the X substitution. Nöbetçi courts without a
+    number are not assigned a file, so they keep the generic token.
+    """
+    from app.detectors.legal.court import court_ordinal, is_duty_court
+
+    label = "MAHKEME" if normalize_tag_locale(locale) == "tr" else "COURT"
+    ordered = sorted(
+        (
+            entity
+            for entity in entities
+            if entity.type == EntityType.COURT_NAME
+            and not court_ordinal(entity.text)
+            and not is_duty_court(entity.text)
+        ),
+        key=lambda entity: (entity.page, entity.start, entity.id),
+    )
+    tokens = {
+        entity.id: f"[{label}_{index}]" for index, entity in enumerate(ordered, start=1)
+    }
+    if not tokens:
+        return entities
+    return [
+        entity.model_copy(update={"placeholder_token": tokens[entity.id]})
+        if entity.id in tokens
+        else entity
+        for entity in entities
+    ]
+
+
 def stamp_placeholder_tokens(
     entities: list[EntityCandidate],
     locale: str,
@@ -403,7 +437,7 @@ def stamp_placeholder_tokens(
                 update={"placeholder_token": registry.token_for(entity, prefer_stamped=False)}
             )
         )
-    return stamped
+    return _number_unnumbered_courts(stamped, locale)
 
 
 def _fallback_token(entity: EntityCandidate, locale: str) -> str:

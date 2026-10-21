@@ -98,7 +98,7 @@ ADDRESS_PATTERN = re.compile(
 # Legal role patterns
 # Title may be glued to the name in OCR ("Av.İrem"). Name tokens may be ALL CAPS.
 _ROLE_TITLE = (
-    r"(?:[Aa][Vv]\.?|[Aa][Vv][Uu][Kk][Aa][Tt]"
+    r"(?:[Pp][Rr][Oo][Ff](?:essor)?\.?|[Aa][Vv]\.?|[Aa][Vv][Uu][Kk][Aa][Tt]"
     r"|[Hh][Aa][Kk][İIıi][Mm]|[Hh][Ââ][Kk][İIıi][Mm]"
     r"|[Yy][Aa][Rr][Gg][Iİıi][ÇçCc]"
     r"|[Ss][Aa][Vv][Cc][Iİıi]"
@@ -109,13 +109,12 @@ _ROLE_TITLE = (
     r"|[Bb][İIıi][Ll][İIıi][Rr][Kk][İIıi][ŞşSs][İIıi]"
     r"|[Mm][ÜüUu][Dd][Aa][Ff][İIıi])"
 )
-_ROLE_NAME = (
-    r"([A-ZÇĞİÖŞÜÂÎÛ]"
-    r"[A-Za-zÇĞİÖŞÜçğıöşüÂÎÛâîû]+"
-    r"(?:\s+[A-ZÇĞİÖŞÜÂÎÛ][A-Za-zÇĞİÖŞÜçğıöşüÂÎÛâîû]+){1,3})"
-)
+_BARE_ROLE_TOKEN = r"[A-ZÇĞİÖŞÜÂÎÛ][A-Za-zÇĞİÖŞÜçğıöşüÂÎÛâîû]+"
+# The name stops before an apostrophe. "Yılmaz'ın" labels "Yılmaz"; "'ın" stays visible.
+_ROLE_NAME = rf"((?:{_BARE_ROLE_TOKEN}\s+){{1,3}}{_BARE_ROLE_TOKEN})"
+_ROLE_TITLE_CHAIN = rf"(?:{_ROLE_TITLE}\s*){{1,3}}"
 LEGAL_ROLE_PREFIX = re.compile(
-    rf"(?<![\wÇĞİÖŞÜçğıöşü]){_ROLE_TITLE}\s*{_ROLE_NAME}"
+    rf"(?<![\wÇĞİÖŞÜçğıöşü])(?P<head>{_ROLE_TITLE_CHAIN}){_ROLE_NAME}"
 )
 
 # Turkish vehicle plate with province code validation
@@ -201,9 +200,9 @@ def detect_turkish_advanced(page: PageText) -> Iterable[EntityCandidate]:
     for match in ADDRESS_PATTERN.finditer(page.text):
         yield _candidate(page, match, EntityType.ADDRESS, "TR_ADDRESS_GRAMMAR")
     
-    # Legal roles with names — group 1 is the name; the title stays outside the span.
+    # Legal roles with names. Professional titles stay inside the labeled span.
     for match in LEGAL_ROLE_PREFIX.finditer(page.text):
-        title = match.group(0)[: match.start(1) - match.start()]
+        title = match.group("head")
         role_type = fold_tr(re.sub(r"[.\s]+", "", title))
         entity_type = EntityType.PERSON_NAME
         role = None
@@ -222,7 +221,7 @@ def detect_turkish_advanced(page: PageText) -> Iterable[EntityCandidate]:
         elif "bilirkisi" in role_type or "bilirkişi" in role_type:
             entity_type = EntityType.EXPERT_NAME
 
-        candidate = _candidate(page, match, entity_type, "TR_LEGAL_ROLE_NAME", group=1)
+        candidate = _candidate(page, match, entity_type, "TR_LEGAL_ROLE_NAME", group=0)
         if role:
             candidate = candidate.model_copy(update={"role": role})
         yield candidate

@@ -110,8 +110,10 @@ _BANNER_PROSE = re.compile(
 # Mersin 9. Asliye Ceza Mahkemesi / İstanbul Anadolu 16. İş Mahkemesi
 # Also stacked: MERSİN \n 9. \n AĞIR CEZA MAHKEMESİ
 # BAM / Yargıtay: Adana Bölge Adliye Mahkemesi 8. Hukuk Dairesi
+# Locative leftovers stay on the court word: "Mahkemesinde", "Mahkemesi'nin".
+_COURT_CASE = r"(?:['’]?(?:nde|ndan|nden|na|ne|n[ıi]|nin|nın|nun|nün|da|de|ta|te|dan|den))?"
 COURT_SPAN = re.compile(
-    rf"(?<!\w)(?:(?:{_CITY}){_WS})?(?:{_REGION}{_WS})?(?:{_ORDINAL}\s*)?(?:{_TAIL}){_CHAMBER}?",
+    rf"(?<!\w)(?:(?:{_CITY}){_WS})?(?:{_REGION}{_WS})?(?:{_ORDINAL}\s*)?(?:{_TAIL}){_COURT_CASE}(?![\wÇĞİÖŞÜçğıöşü]){_CHAMBER}?",
     re.IGNORECASE,
 )
 _CHAMBER_LINE = re.compile(
@@ -142,6 +144,12 @@ TOP_HEADER_CM = 1.0
 TOP_HEADER_PT = 72.0 / 2.54 * TOP_HEADER_CM
 # Word boxes sit inside the ink; a short pad left serifs / dotted İ visible.
 HEADER_MASK_PAD_PT = 4.0
+
+
+def is_duty_court(text: str) -> bool:
+    """Nöbetçi court: the file has not been assigned to a numbered chamber."""
+    folded = _ascii_tr(_fold(_strip_noise(text)))
+    return bool(re.search(r"(?<!\w)nobetci(?!\w)", folded))
 
 
 def court_ordinal(text: str) -> str | None:
@@ -202,7 +210,7 @@ def parse_courts(page: "PageText") -> list["EntityCandidate"]:
             start, end = _expand_top_header_span(page.text, start)
             span = page.text[start:end]
             scope = HEADER_LINE_SCOPE
-        if not high and not scope and not court_ordinal(span):
+        if not high and not scope and not court_ordinal(span) and is_duty_court(span):
             return
         key = (start, end)
         if key in seen or end <= start:
@@ -319,8 +327,10 @@ def _looks_like_letterhead_row(line: str) -> bool:
     cut = re.sub(r"\s+", " ", _cut_docket(line)).strip()
     if not _has_header_cue(cut):
         return False
+    if "," in cut or ";" in cut or len(cut) > 90 or len(cut.split()) > 8:
+        return False
     folded = _ascii_tr(_fold(cut))
-    if re.search(r"durus|erteledi|kararina|atif|gerekce|hukum|dusunuldu", folded):
+    if re.search(r"durus|erteledi|kararina|atif|gerekce|hukum|dusunuldu|vekili|\bago\b", folded):
         return False
     if not re.search(r"\bt\.?\s*c\.?\b", folded) and not _span_has_city(cut):
         return False
@@ -395,12 +405,14 @@ def _line_at(text: str, index: int) -> tuple[int, int, str]:
 
 def _is_court_tail(value: str) -> bool:
     compact = re.sub(r"\s+", " ", _ascii_tr(_strip_noise(value))).strip()
-    if not compact:
+    if not compact or "," in compact or ";" in compact:
         return False
     if any(pattern.fullmatch(compact) for pattern in _TAIL_RES):
         return True
     parts = compact.split()
-    return len(parts) >= 2 and parts[-1].startswith("mahkemes")
+    if len(parts) < 2 or len(parts) > 8:
+        return False
+    return parts[-1].startswith("mahkemes")
 
 
 def _expand_header_span(text: str, start: int, end: int) -> tuple[int, int]:

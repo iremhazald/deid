@@ -117,6 +117,10 @@ def _court_name_policy(
         return True, TransformationStrategy.REDACT
     if _is_english_court(candidate, locale):
         return False, TransformationStrategy.KEEP
+    from app.detectors.legal.court import court_ordinal, is_duty_court
+
+    if is_duty_court(candidate.text) and not court_ordinal(candidate.text):
+        return False, TransformationStrategy.KEEP
     return True, TransformationStrategy.PLACEHOLDER
 
 

@@ -39,6 +39,8 @@ function renderUpload(
       onStartScan={() => undefined}
       documentLanguage={null}
       onDocumentLanguageChange={() => undefined}
+      workspaceMode={null}
+      onWorkspaceModeChange={() => undefined}
       {...overrides}
     />,
   )
@@ -65,7 +67,11 @@ describe('UploadScreen', () => {
   })
 
   it('shows one Start Scan action with privacy, notice, and integrated settings', () => {
-    const html = renderUpload(tr, { selectedFileName: 'dilekce.pdf', documentLanguage: 'tr' })
+    const html = renderUpload(tr, {
+      selectedFileName: 'dilekce.pdf',
+      documentLanguage: 'tr',
+      workspaceMode: 'DOCUMENT',
+    })
     expect(html).toContain(tr.uploadTitle)
     expect(html).toContain(tr.uploadBody)
     expect(html).toContain(tr.localScan.cta)
@@ -124,17 +130,77 @@ describe('UploadScreen', () => {
     expect(langButNoFile).toContain('disabled')
     expect(langButNoFile).toContain(tr.localScan.needFile)
     
-    const bothReady = renderUpload(tr, { selectedFileName: 'test.pdf', documentLanguage: 'tr' })
+    const bothReady = renderUpload(tr, {
+      selectedFileName: 'test.pdf',
+      documentLanguage: 'tr',
+      workspaceMode: 'DOCUMENT',
+    })
     expect(bothReady).not.toContain('disabled')
+
+    const noWorkspace = renderUpload(tr, { selectedFileName: 'test.pdf', documentLanguage: 'tr' })
+    expect(noWorkspace).toContain('disabled')
+    expect(noWorkspace).toContain(tr.workspaceChoice.needChoice)
   })
 
-  it('offers PDF only on the upload dropzone copy', () => {
+  it('asks how to work with a PDF without changing document language', () => {
+    const hidden = renderUpload(tr, { documentLanguage: 'tr' })
+    expect(hidden).not.toContain(tr.workspaceChoice.question)
+    expect(hidden).toContain(tr.documentLanguage.label)
+
+    const turkish = renderUpload(tr, { selectedFileName: 'dilekce.pdf', documentLanguage: 'tr' })
+    expect(turkish).toContain(tr.workspaceChoice.question)
+    expect(turkish).toContain(tr.workspaceChoice.pdf)
+    expect(turkish).toContain(tr.workspaceChoice.text)
+    expect(turkish).toContain(tr.documentLanguage.tr)
+    expect(turkish).toContain(tr.documentLanguage.en)
+
+    const english = renderUpload(en, {
+      selectedFileName: 'claim.pdf',
+      documentLanguage: 'en',
+      workspaceMode: 'TEXT',
+    })
+    expect(english).toContain(en.workspaceChoice.question)
+    expect(english).toContain(en.workspaceChoice.pdf)
+    expect(english).toContain(en.workspaceChoice.text)
+    expect(english).toContain(en.documentLanguage.label)
+    expect(english).not.toContain('ChatGPT')
+    expect(english).not.toContain('OpenAI')
+  })
+
+  it('offers PDF, DOCX, and UDF', () => {
     expect(en.dropHint).toContain('PDF')
-    expect(en.dropHint).not.toMatch(/Word/i)
-    expect(en.fileLimits).toContain('PDF')
-    expect(en.fileLimits).not.toMatch(/DOCX/i)
-    expect(tr.dropHint).toContain('PDF')
-    expect(tr.fileLimits).not.toMatch(/DOCX/i)
-    expect(tr.fileLimits).not.toMatch(/Word/i)
+    expect(en.dropHint).toContain('DOCX')
+    expect(en.dropHint).toContain('UDF')
+    expect(en.dropHint).not.toContain('UYAP')
+    expect(en.fileLimits).toContain('UDF')
+    expect(en.fileLimits).not.toContain('UYAP')
+    expect(tr.dropHint).toContain('UDF')
+    expect(tr.dropHint).not.toContain('UYAP')
+    expect(tr.fileLimits).toContain('UDF')
+    expect(tr.fileLimits).not.toContain('UYAP')
+  })
+
+  it('asks for a workspace only after a PDF is selected', () => {
+    const pdf = renderUpload(tr, { selectedFileName: 'dilekce.pdf', documentLanguage: 'tr' })
+    expect(pdf).toContain(tr.workspaceChoice.question)
+    expect(pdf).not.toContain(tr.docxUpload.source)
+
+    const docx = renderUpload(tr, { selectedFileName: 'not.docx', documentLanguage: 'tr' })
+    expect(docx).not.toContain(tr.workspaceChoice.question)
+    expect(docx).not.toContain(tr.workspaceChoice.pdf)
+    expect(docx).toContain(tr.docxUpload.source)
+    expect(docx).toContain(tr.docxUpload.workspace)
+    expect(docx).not.toContain('disabled')
+
+    const english = renderUpload(en, { selectedFileName: 'claim.docx', documentLanguage: 'en' })
+    expect(english).not.toContain(en.workspaceChoice.question)
+    expect(english).toContain(en.docxUpload.source)
+    expect(english).toContain('Workspace: Text')
+
+    const udf = renderUpload(tr, { selectedFileName: 'dilekce.udf', documentLanguage: 'tr' })
+    expect(udf).not.toContain(tr.workspaceChoice.question)
+    expect(udf).toContain(tr.udfUpload.source)
+    expect(udf).toContain(tr.udfUpload.workspace)
+    expect(udf).not.toContain('disabled')
   })
 })
