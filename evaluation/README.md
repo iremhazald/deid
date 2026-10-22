@@ -59,12 +59,20 @@ mode which includes local NER models.
 
 A prediction matches a gold entity when both have the same type and the span
 overlap IoU is **at least 0.5**. Each prediction is paired with the unmatched
-gold span that has the highest IoU. An overlap of exactly 0.5 counts.
+gold span that has the highest IoU. An overlap of exactly 0.5 counts. This
+strict match is what the CI gates use, and the gates use Turkish documents.
+
+The same run also reports a person-family match. `PERSON_NAME`, `FIRST_NAME`,
+`LAST_NAME`, `ALIAS`, `CLAIMANT_NAME`, `DEFENDANT_NAME`, `LAWYER_NAME`,
+`JUDGE_NAME`, `WITNESS_NAME`, and `EXPERT_NAME` count as one type. The
+difference shows whether a person was missed or only the role was wrong.
+Person-family numbers are not gated. English documents are printed and are
+not part of the Turkish gate.
 
 ## Thresholds
 
-- Overall precision ≥ 75%
-- Overall recall ≥ 50% (rules-only has inherent limitations)
+- Turkish strict precision ≥ 75%
+- Turkish strict recall ≥ 50% (rules-only has inherent limitations)
 - Critical category recall ≥ 95% for: NATIONAL_ID, IBAN, EMAIL, PHONE_NUMBER
 
 PERSON_NAME and CREDIT_CARD are excluded from critical 95% recall gates because:

@@ -12,7 +12,10 @@ Usage:
     python evaluation/evaluate_rules.py --compare before.json after.json
 
 A prediction matches a gold span of the same type when overlap IoU is
-at least 0.5. Each run writes a JSON result file.
+at least 0.5. The CI gates use that strict match on Turkish documents.
+A second, ungated match treats every person-name type as one family.
+English documents are reported and are not gated. Each run writes a JSON
+result file.
 """
 
 from __future__ import annotations
@@ -61,6 +64,23 @@ CRITICAL_CATEGORIES = {
     "PHONE_NUMBER",
 }
 CRITICAL_RECALL_THRESHOLD = 0.95  # 95% recall for critical PII categories
+
+# Strict gates stay on these types. The family match collapses them to one type.
+PERSON_NAME_TYPES = frozenset(
+    {
+        "PERSON_NAME",
+        "FIRST_NAME",
+        "LAST_NAME",
+        "ALIAS",
+        "CLAIMANT_NAME",
+        "DEFENDANT_NAME",
+        "LAWYER_NAME",
+        "JUDGE_NAME",
+        "WITNESS_NAME",
+        "EXPERT_NAME",
+    }
+)
+PERSON_FAMILY = "PERSON"
 
 # Gold may use every EntityType. A label that is not in the enum fails below.
 # Political opinion is not an EntityType.
@@ -178,8 +198,53 @@ async def detect_rules_only(text: str) -> set[tuple[int, int, str]]:
     return {(e.start, e.end, e.type.value) for e in all_entities}
 
 
+def _metrics_from_counts(tp: int, fp: int, fn: int) -> dict[str, float | int]:
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0.0
+    return {"precision": precision, "recall": recall, "f1": f1, "tp": tp, "fp": fp, "fn": fn}
+
+
+def _as_family(entities: set[tuple[int, int, str]]) -> set[tuple[int, int, str]]:
+    """Collapse person-name types so a wrong role is not a miss."""
+    return {(start, end, PERSON_FAMILY if label in PERSON_NAME_TYPES else label) for start, end, label in entities}
+
+
+def _score_pairs(
+    pairs: list[tuple[set[tuple[int, int, str]], set[tuple[int, int, str]]]],
+) -> dict[str, Any]:
+    category_stats: dict[str, dict[str, int]] = defaultdict(lambda: {"tp": 0, "fp": 0, "fn": 0})
+    overall_tp, overall_fp, overall_fn = 0, 0, 0
+    for predicted, gold in pairs:
+        tp, fp, fn = match_entities_with_overlap(predicted, gold)
+        overall_tp += tp
+        overall_fp += fp
+        overall_fn += fn
+        pred_by_cat: dict[str, set[tuple[int, int, str]]] = defaultdict(set)
+        gold_by_cat: dict[str, set[tuple[int, int, str]]] = defaultdict(set)
+        for entity in predicted:
+            pred_by_cat[entity[2]].add(entity)
+        for entity in gold:
+            gold_by_cat[entity[2]].add(entity)
+        for category in set(pred_by_cat) | set(gold_by_cat):
+            cat_tp, cat_fp, cat_fn = match_entities_with_overlap(
+                pred_by_cat[category], gold_by_cat[category]
+            )
+            category_stats[category]["tp"] += cat_tp
+            category_stats[category]["fp"] += cat_fp
+            category_stats[category]["fn"] += cat_fn
+    by_category = {
+        category: _metrics_from_counts(stats["tp"], stats["fp"], stats["fn"])
+        for category, stats in category_stats.items()
+    }
+    return {
+        "overall": _metrics_from_counts(overall_tp, overall_fp, overall_fn),
+        "by_category": by_category,
+    }
+
+
 async def evaluate() -> dict[str, Any]:
-    """Evaluate rule-based detection on corpus with overlap-based matching."""
+    """Evaluate rule-based detection. Gates use strict Turkish matches."""
     corpus = load_corpus()
     integrity = corpus_integrity_errors(corpus)
     if integrity:
@@ -187,74 +252,42 @@ async def evaluate() -> dict[str, Any]:
         for error in integrity:
             print(f"  - {error}")
         raise SystemExit(1)
-    category_stats: dict[str, dict[str, int]] = defaultdict(
-        lambda: {"tp": 0, "fp": 0, "fn": 0}
-    )
-    overall_tp, overall_fp, overall_fn = 0, 0, 0
 
+    detected: list[tuple[dict[str, Any], set[tuple[int, int, str]], set[tuple[int, int, str]]]] = []
     for doc in corpus:
-        text = doc["text"]
-        gold_entities = {normalize_entity(e) for e in doc["gold_entities"]}
-        predicted_entities = await detect_rules_only(text)
+        gold_entities = {normalize_entity(entity) for entity in doc["gold_entities"]}
+        predicted_entities = await detect_rules_only(doc["text"])
+        detected.append((doc, predicted_entities, gold_entities))
 
-        # Use overlap-based matching instead of exact match
-        tp, fp, fn = match_entities_with_overlap(predicted_entities, gold_entities)
-        overall_tp += tp
-        overall_fp += fp
-        overall_fn += fn
+    def pairs_for(language: str, *, family: bool) -> list[tuple[set, set]]:
+        selected = []
+        for doc, predicted, gold in detected:
+            if doc.get("language", "tr") != language:
+                continue
+            if family:
+                predicted = _as_family(predicted)
+                gold = _as_family(gold)
+            selected.append((predicted, gold))
+        return selected
 
-        # Per-category stats with overlap matching
-        # Group by category first
-        pred_by_cat: dict[str, set[tuple[int, int, str]]] = defaultdict(set)
-        gold_by_cat: dict[str, set[tuple[int, int, str]]] = defaultdict(set)
-        
-        for entity in predicted_entities:
-            pred_by_cat[entity[2]].add(entity)
-        for entity in gold_entities:
-            gold_by_cat[entity[2]].add(entity)
-        
-        # Match per category
-        all_categories = set(pred_by_cat.keys()) | set(gold_by_cat.keys())
-        for category in all_categories:
-            cat_tp, cat_fp, cat_fn = match_entities_with_overlap(
-                pred_by_cat[category], gold_by_cat[category]
-            )
-            category_stats[category]["tp"] += cat_tp
-            category_stats[category]["fp"] += cat_fp
-            category_stats[category]["fn"] += cat_fn
-
-    # Compute per-category metrics
-    category_metrics = {}
-    for category, stats in category_stats.items():
-        tp, fp, fn = stats["tp"], stats["fp"], stats["fn"]
-        precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-        recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-        f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0.0
-        category_metrics[category] = {
-            "precision": precision,
-            "recall": recall,
-            "f1": f1,
-            "tp": tp,
-            "fp": fp,
-            "fn": fn,
+    by_language: dict[str, Any] = {}
+    languages = sorted({str(doc.get("language", "tr")) for doc, _, _ in detected})
+    for language in languages:
+        documents = [doc for doc, _, _ in detected if doc.get("language", "tr") == language]
+        by_language[language] = {
+            "corpus_size": len(documents),
+            "strict": _score_pairs(pairs_for(language, family=False)),
+            "person_family": _score_pairs(pairs_for(language, family=True)),
         }
 
-    # Overall metrics
-    overall_precision = overall_tp / (overall_tp + overall_fp) if (overall_tp + overall_fp) > 0 else 0.0
-    overall_recall = overall_tp / (overall_tp + overall_fn) if (overall_tp + overall_fn) > 0 else 0.0
-    overall_f1 = (2 * overall_precision * overall_recall / (overall_precision + overall_recall)) if (overall_precision + overall_recall) > 0 else 0.0
-
+    turkish = by_language.get("tr")
+    if turkish is None:
+        raise SystemExit("GOLD INTEGRITY FAILED:\n  - no Turkish documents to gate")
     return {
-        "corpus_size": len(corpus),
-        "overall": {
-            "precision": overall_precision,
-            "recall": overall_recall,
-            "f1": overall_f1,
-            "tp": overall_tp,
-            "fp": overall_fp,
-            "fn": overall_fn,
-        },
-        "by_category": category_metrics,
+        "corpus_size": turkish["corpus_size"],
+        "overall": turkish["strict"]["overall"],
+        "by_category": turkish["strict"]["by_category"],
+        "by_language": by_language,
     }
 
 
@@ -282,34 +315,56 @@ def gate_failures(results: dict[str, Any]) -> list[str]:
     return failures
 
 
-def print_results(results: dict[str, Any]) -> bool:
-    """Pretty-print evaluation results. Status words are ASCII for Windows consoles."""
-    print("\n" + "=" * 60)
-    print("RULES-ONLY DETECTION EVALUATION")
-    print("Path: legacy detectors plus unmerged structural hits")
-    print("=" * 60)
-    print(f"Corpus size: {results['corpus_size']} documents\n")
-
-    overall = results["overall"]
-    print("OVERALL METRICS:")
+def _print_overall(title: str, scored: dict[str, Any]) -> None:
+    overall = scored["overall"]
+    print(title)
     print(f"  Precision: {overall['precision']:.2%}")
     print(f"  Recall:    {overall['recall']:.2%}")
     print(f"  F1 Score:  {overall['f1']:.2%}")
-    print(f"  TP: {overall['tp']}, FP: {overall['fp']}, FN: {overall['fn']}\n")
+    print(f"  TP: {overall['tp']}, FP: {overall['fp']}, FN: {overall['fn']}")
 
-    print("PER-CATEGORY METRICS:")
-    by_cat = results["by_category"]
-    for category in sorted(by_cat.keys()):
-        metrics = by_cat[category]
+
+def _print_categories(scored: dict[str, Any]) -> None:
+    for category in sorted(scored["by_category"]):
+        metrics = scored["by_category"][category]
         print(f"\n  {category}:")
         print(f"    Precision: {metrics['precision']:.2%}")
         print(f"    Recall:    {metrics['recall']:.2%}")
         print(f"    F1:        {metrics['f1']:.2%}")
         print(f"    TP: {metrics['tp']}, FP: {metrics['fp']}, FN: {metrics['fn']}")
 
+
+def print_results(results: dict[str, Any]) -> bool:
+    """Pretty-print evaluation results. Status words are ASCII for Windows consoles."""
+    print("\n" + "=" * 60)
+    print("RULES-ONLY DETECTION EVALUATION")
+    print("Path: legacy detectors plus unmerged structural hits")
+    print("Gates: strict match, Turkish documents")
+    print("=" * 60)
+    print(f"Corpus size: {results['corpus_size']} Turkish documents\n")
+
+    _print_overall("OVERALL METRICS (strict):", {"overall": results["overall"]})
+    print("\nPER-CATEGORY METRICS:")
+    _print_categories({"by_category": results["by_category"]})
+
+    by_language = results.get("by_language") or {}
+    turkish = by_language.get("tr")
+    if turkish is not None:
+        print("\n" + "=" * 60)
+        print("TURKISH PERSON-FAMILY MATCH (not gated)")
+        _print_overall("OVERALL:", turkish["person_family"])
+    english = by_language.get("en")
+    if english is not None and english["corpus_size"]:
+        print("\n" + "=" * 60)
+        print(f"ENGLISH REPORT ONLY ({english['corpus_size']} documents, not gated)")
+        _print_overall("STRICT:", english["strict"])
+        _print_overall("PERSON-FAMILY:", english["person_family"])
+
     print("\n" + "=" * 60)
 
     failures = gate_failures(results)
+    overall = results["overall"]
+    by_cat = results["by_category"]
     if overall["precision"] >= PRECISION_THRESHOLD:
         print(f"PASS: Overall precision ({overall['precision']:.2%}) >= {PRECISION_THRESHOLD:.0%}")
     if overall["recall"] >= RECALL_THRESHOLD:
@@ -343,6 +398,9 @@ def build_report(results: dict[str, Any], failures: list[str]) -> dict[str, Any]
         "corpus_size": results["corpus_size"],
         "overall": results["overall"],
         "by_category": results["by_category"],
+        "by_language": results.get("by_language", {}),
+        "gate_language": "tr",
+        "gate_match": "strict",
         "gates": {
             "precision_threshold": PRECISION_THRESHOLD,
             "recall_threshold": RECALL_THRESHOLD,
