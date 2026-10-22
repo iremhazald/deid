@@ -15,7 +15,8 @@ A prediction matches a gold span of the same type when overlap IoU is
 at least 0.5. The CI gates use that strict match on Turkish documents.
 A second, ungated match treats every person-name type as one family.
 English documents are reported and are not gated. Each run writes a JSON
-result file.
+result file. The legacy detector list does not include the English pack, so
+this command does not score English documents.
 """
 
 from __future__ import annotations
@@ -256,6 +257,9 @@ async def evaluate() -> dict[str, Any]:
     detected: list[tuple[dict[str, Any], set[tuple[int, int, str]], set[tuple[int, int, str]]]] = []
     for doc in corpus:
         gold_entities = {normalize_entity(entity) for entity in doc["gold_entities"]}
+        if doc.get("language") == "en":
+            detected.append((doc, set(), set()))
+            continue
         predicted_entities = await detect_rules_only(doc["text"])
         detected.append((doc, predicted_entities, gold_entities))
 
@@ -274,6 +278,14 @@ async def evaluate() -> dict[str, Any]:
     languages = sorted({str(doc.get("language", "tr")) for doc, _, _ in detected})
     for language in languages:
         documents = [doc for doc, _, _ in detected if doc.get("language", "tr") == language]
+        if language == "en":
+            # The legacy detector list has no English pack. A score here would
+            # look like an English result and is not one.
+            by_language[language] = {
+                "corpus_size": len(documents),
+                "detectors_loaded": False,
+            }
+            continue
         by_language[language] = {
             "corpus_size": len(documents),
             "strict": _score_pairs(pairs_for(language, family=False)),
@@ -356,9 +368,7 @@ def print_results(results: dict[str, Any]) -> bool:
     english = by_language.get("en")
     if english is not None and english["corpus_size"]:
         print("\n" + "=" * 60)
-        print(f"ENGLISH REPORT ONLY ({english['corpus_size']} documents, not gated)")
-        _print_overall("STRICT:", english["strict"])
-        _print_overall("PERSON-FAMILY:", english["person_family"])
+        print("English detectors not loaded on this path")
 
     print("\n" + "=" * 60)
 

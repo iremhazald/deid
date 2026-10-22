@@ -66,8 +66,8 @@ The same run also reports a person-family match. `PERSON_NAME`, `FIRST_NAME`,
 `LAST_NAME`, `ALIAS`, `CLAIMANT_NAME`, `DEFENDANT_NAME`, `LAWYER_NAME`,
 `JUDGE_NAME`, `WITNESS_NAME`, and `EXPERT_NAME` count as one type. The
 difference shows whether a person was missed or only the role was wrong.
-Person-family numbers are not gated. English documents are printed and are
-not part of the Turkish gate.
+Person-family numbers are not gated. English documents are in the corpus, and
+this command does not score them: the legacy detector list has no English pack.
 
 ## Thresholds
 
@@ -103,3 +103,11 @@ Configurations to compare:
 2. deterministic + local NER (`LOCAL_CONTEXT`) — not CI-gated (requires models)
 
 V1 does not evaluate an external or generative LLM path.
+
+## Part 4
+
+The CI gate is still this legacy command. Part 4 moves that gate to the
+product rules-only path and keeps this command as a report for one release.
+On the product path, English has its own gate for `EMAIL`, `PHONE_NUMBER`,
+`IBAN`, and `NATIONAL_ID`. That gate is not merged into the Turkish total.
+The gold set has at least ten examples of each of those four.
