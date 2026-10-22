@@ -173,7 +173,12 @@ def _fit_iban(match: re.Match[str]) -> tuple[str, int, int] | None:
     return None
 
 
-EMAIL = re.compile(r"(?<![\w.+-])[\w.+-]+@(?:[\w-]+\.)+[A-Za-z]{2,63}(?![\w.-])")
+# A dot after the address is sentence punctuation unless another address
+# character follows it. Word characters, "+", and "-" still reject the match,
+# so a truncated address is not returned.
+EMAIL = re.compile(
+    r"(?<![\w.+-])[\w.+-]+@(?:[\w-]+\.)+[A-Za-z]{2,63}(?![\w+-])(?!\.[A-Za-z0-9])"
+)
 URL = re.compile(r"\bhttps?://[^\s<>{}\[\]]+", re.IGNORECASE)
 IPV4 = re.compile(r"(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])")
 # Do not use IGNORECASE: Turkish İ would be treated as [A-Z] and swallow "İbana".
