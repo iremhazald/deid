@@ -25,7 +25,7 @@ import argparse
 import asyncio
 import json
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -295,11 +295,27 @@ async def evaluate() -> dict[str, Any]:
     turkish = by_language.get("tr")
     if turkish is None:
         raise SystemExit("GOLD INTEGRITY FAILED:\n  - no Turkish documents to gate")
+    turkish_rows = [
+        (doc, predicted, gold)
+        for doc, predicted, gold in detected
+        if doc.get("language", "tr") == "tr"
+    ]
+    support: dict[str, dict[str, int]] = defaultdict(dict)
+    for doc in corpus:
+        language = str(doc.get("language", "tr"))
+        counts: Counter[str] = Counter(entity["type"] for entity in doc["gold_entities"])
+        for label, count in counts.items():
+            support[language][label] = support[language].get(label, 0) + count
+    for language in support:
+        support[language] = dict(sorted(support[language].items()))
     return {
         "corpus_size": turkish["corpus_size"],
         "overall": turkish["strict"]["overall"],
         "by_category": turkish["strict"]["by_category"],
         "by_language": by_language,
+        "by_difficulty": _slice_table(turkish_rows, "difficulty"),
+        "by_document_type": _slice_table(turkish_rows, "document_type"),
+        "gold_support": dict(support),
     }
 
 
@@ -344,6 +360,53 @@ def _print_categories(scored: dict[str, Any]) -> None:
         print(f"    Recall:    {metrics['recall']:.2%}")
         print(f"    F1:        {metrics['f1']:.2%}")
         print(f"    TP: {metrics['tp']}, FP: {metrics['fp']}, FN: {metrics['fn']}")
+        gold = metrics["tp"] + metrics["fn"]
+        print(f"    Gold: {gold}")
+        if gold < 10:
+            print("    low sample")
+
+
+def _slice_table(
+    rows: list[tuple[dict[str, Any], set[tuple[int, int, str]], set[tuple[int, int, str]]]],
+    key: str,
+) -> dict[str, Any]:
+    buckets: dict[str, list[tuple[set[tuple[int, int, str]], set[tuple[int, int, str]]]]] = defaultdict(list)
+    for doc, predicted, gold in rows:
+        buckets[str(doc.get(key, ""))].append((predicted, gold))
+    table: dict[str, Any] = {}
+    for name, pairs in sorted(buckets.items()):
+        scored = _score_pairs(pairs)["overall"]
+        gold_count = sum(len(gold) for _predicted, gold in pairs)
+        table[name] = {**scored, "gold": gold_count, "low_sample": gold_count < 10}
+    return table
+
+
+def _print_slices(results: dict[str, Any]) -> None:
+    for title, key in (("BY DIFFICULTY (Turkish strict)", "by_difficulty"), ("BY DOCUMENT TYPE (Turkish strict)", "by_document_type")):
+        table = results.get(key) or {}
+        if not table:
+            continue
+        print("\n" + "=" * 60)
+        print(title)
+        for name, metrics in table.items():
+            flag = "  low sample" if metrics.get("low_sample") else ""
+            print(
+                f"  {name}: gold {metrics['gold']}  P {metrics['precision']:.2%}  "
+                f"R {metrics['recall']:.2%}  F1 {metrics['f1']:.2%}{flag}"
+            )
+
+
+def _print_gold_support(results: dict[str, Any]) -> None:
+    support = results.get("gold_support") or {}
+    if not support:
+        return
+    print("\n" + "=" * 60)
+    print("GOLD SUPPORT")
+    for language, counts in support.items():
+        print(f"  {language}:")
+        for label, count in counts.items():
+            flag = "  low sample" if count < 10 else ""
+            print(f"    {label}: {count}{flag}")
 
 
 def print_results(results: dict[str, Any]) -> bool:
@@ -365,6 +428,8 @@ def print_results(results: dict[str, Any]) -> bool:
         print("\n" + "=" * 60)
         print("TURKISH PERSON-FAMILY MATCH (not gated)")
         _print_overall("OVERALL:", turkish["person_family"])
+    _print_slices(results)
+    _print_gold_support(results)
     english = by_language.get("en")
     if english is not None and english["corpus_size"]:
         print("\n" + "=" * 60)
@@ -409,6 +474,9 @@ def build_report(results: dict[str, Any], failures: list[str]) -> dict[str, Any]
         "overall": results["overall"],
         "by_category": results["by_category"],
         "by_language": results.get("by_language", {}),
+        "by_difficulty": results.get("by_difficulty", {}),
+        "by_document_type": results.get("by_document_type", {}),
+        "gold_support": results.get("gold_support", {}),
         "gate_language": "tr",
         "gate_match": "strict",
         "gates": {

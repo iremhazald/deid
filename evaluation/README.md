@@ -79,6 +79,12 @@ PERSON_NAME and CREDIT_CARD are excluded from critical 95% recall gates because:
 - PERSON_NAME: Isolated names require NER; rules detect only role-prefixed names
 - CREDIT_CARD: Partial card references ("last 4 digits") are not full cards
 
+Each category line prints its gold count. Precision, recall, and F1 are also
+printed by difficulty and by document type. A category, difficulty, or document
+type with fewer than 10 gold entities is marked `low sample`. The flag does
+not fail CI. English gold counts are printed without a score, because this
+command does not load the English detectors.
+
 ## Running
 
 ```bash
