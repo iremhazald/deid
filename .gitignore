@@ -49,7 +49,8 @@ Thumbs.db
 # The private regression corpus contains data derived from legal documents.
 # This exclusion allows developers to restore it locally for internal testing
 # without risk of accidental commit. The risk-score test below is synthetic
-# and is the public exception, together with the email-boundary tests.
+# and is the public exception, together with the email-boundary and placeholder tests.
 apps/api/tests/*
 !apps/api/tests/test_reidentification.py
 !apps/api/tests/test_email_boundaries.py
+!apps/api/tests/test_placeholder_identity.py
