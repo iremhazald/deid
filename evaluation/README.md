@@ -1,5 +1,10 @@
 # Detection evaluation
 
+Annotation rules are in [ANNOTATION_GUIDELINES.md](ANNOTATION_GUIDELINES.md).
+Pending label and offset decisions are in
+[RELABEL_PROPOSALS.md](RELABEL_PROPOSALS.md). None of those proposals are
+applied to the corpus yet.
+
 Benchmark data must be synthetic or properly licensed and de-identified. Each
 JSONL record should use this shape:
 
