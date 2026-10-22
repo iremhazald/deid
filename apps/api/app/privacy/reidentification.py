@@ -16,7 +16,6 @@ QUASI_IDENTIFIERS = {
     EntityType.COURT_NAME,  # Can reveal location
     EntityType.VEHICLE_PLATE,  # Province code
     EntityType.ORGANISATION,  # Employer/affiliation
-    EntityType.SALARY_INFORMATION,
 }
 
 # High-uniqueness identifiers (even one remaining is high risk)

@@ -87,7 +87,6 @@ ALLOWED: dict[EntityType, set[TransformationStrategy]] = {
     EntityType.SIGNATURE: {TransformationStrategy.REDACT, TransformationStrategy.KEEP},
     EntityType.QR_CODE: {TransformationStrategy.REDACT, TransformationStrategy.KEEP},
     EntityType.UYAP_ACCESS: {TransformationStrategy.REDACT, TransformationStrategy.KEEP},
-    EntityType.SALARY_INFORMATION: COMMON,
     EntityType.POLITICAL_INFORMATION: COMMON,
 }
 
@@ -123,7 +122,6 @@ RECOMMENDED: dict[EntityType, TransformationStrategy] = {
     EntityType.FINANCIAL_IDENTIFIER: TransformationStrategy.REDACT,
     EntityType.UYAP_ACCESS: TransformationStrategy.REDACT,
     EntityType.QR_CODE: TransformationStrategy.REDACT,
-    EntityType.SALARY_INFORMATION: TransformationStrategy.REDACT,
     EntityType.POLITICAL_INFORMATION: TransformationStrategy.REDACT,
     EntityType.PHONE_NUMBER: TransformationStrategy.PLACEHOLDER,
     EntityType.EMAIL: TransformationStrategy.PARTIAL_MASK,

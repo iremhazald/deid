@@ -91,7 +91,6 @@ PLACEHOLDER_DISCOURAGED: frozenset[EntityType] = frozenset(
         EntityType.SYSTEM_URL,
         EntityType.COMPANY_NAME,
         EntityType.ORGANISATION,
-        EntityType.SALARY_INFORMATION,
         EntityType.POLITICAL_INFORMATION,
         EntityType.COURT_NAME,
     }
@@ -603,18 +602,6 @@ TAG_SPECS: dict[EntityType, TagSpec] = {
         tr="TUTAR",
         en="AMOUNT",
         notes="Descriptive attribute. Default remains KEEP. Explicit PLACEHOLDER yields generic [TUTAR].",
-    ),
-    EntityType.SALARY_INFORMATION: _spec(
-        "SALARY",
-        "SALARY_INFORMATION",
-        numbered=False,
-        reuse=False,
-        role_propagation="n/a",
-        recommended=False,
-        allowed=True,
-        tr="MAAŞ",
-        en="SALARY",
-        notes="Free-text span: generic unnumbered tag. Default remains REDACT.",
     ),
     EntityType.POLITICAL_INFORMATION: _spec(
         "POLITICAL",

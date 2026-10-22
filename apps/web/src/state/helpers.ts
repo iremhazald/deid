@@ -534,7 +534,7 @@ export function categoryAccent(type: string): string {
   }
   if (/ADDRESS|POSTAL|LOCATION/.test(type)) return 'accent-address'
   if (/EMAIL|PHONE|IP|URL|CYBER|PORT/.test(type)) return 'accent-contact'
-  if (/IBAN|BANK|CREDIT|FINANCIAL|SALARY/.test(type)) return 'accent-finance'
+  if (/IBAN|BANK|CREDIT|FINANCIAL/.test(type)) return 'accent-finance'
   if (/HEALTH|CRIMINAL/.test(type)) {
     return 'accent-sensitive'
   }
@@ -750,7 +750,6 @@ const PLACEHOLDER_TR: Record<string, string> = {
   IP_ADDRESS: 'IP',
   URL: 'URL',
   VEHICLE_PLATE: 'PLAKA',
-  SALARY_INFORMATION: 'MAAŞ',
   POLITICAL_INFORMATION: 'SİYASİ',
 }
 
@@ -800,7 +799,6 @@ const PLACEHOLDER_EN: Record<string, string> = {
   IP_ADDRESS: 'IP',
   URL: 'URL',
   VEHICLE_PLATE: 'VEHICLE_PLATE',
-  SALARY_INFORMATION: 'SALARY',
   POLITICAL_INFORMATION: 'POLITICAL',
 }
 
@@ -809,7 +807,6 @@ const UNNUMBERED_PLACEHOLDER = new Set([
   'POSTAL_CODE',
   'MONEY_AMOUNT',
   'COURT_NAME',
-  'SALARY_INFORMATION',
   'POLITICAL_INFORMATION',
   'SIGNATURE',
   'QR_CODE',
