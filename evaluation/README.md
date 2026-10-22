@@ -85,11 +85,19 @@ PERSON_NAME and CREDIT_CARD are excluded from critical 95% recall gates because:
 python evaluation/evaluate_rules.py
 python evaluation/evaluate_rules.py --output evaluation/runs/custom.json
 python evaluation/evaluate_rules.py --compare evaluation/runs/before.json evaluation/runs/after.json
+python evaluation/evaluate_rules.py --product
+python evaluation/evaluate_rules.py --e2e
 ```
 
 The default command is the CI gate. It scores the legacy detector list plus
 structural label hits, without the product merge that runs after those
-detectors. Before scoring, it checks every gold span: `text[start:end]` must
+detectors. `--product` scores that product pipeline on plain text, once in
+rules-only and once with local NER, and is not gated. If the NER model is
+missing, that run fails instead of presenting the rules-only numbers as the
+NER result. `--e2e` builds one synthetic PDF and one DOCX, redacts them
+through the product export in rules-only mode, and fails when a structured
+identifier or a role-prefixed name is still in the output. Other remaining
+gold values are printed as known gaps. Before scoring, it checks every gold span: `text[start:end]` must
 equal the gold text, and every label must be an `EntityType` on the scope
 list in `ANNOTATION_GUIDELINES.md`. A label that is not an `EntityType` fails
 that check.

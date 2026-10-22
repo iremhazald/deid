@@ -500,6 +500,354 @@ def compare_reports(before_path: Path, after_path: Path) -> None:
     print(f"\nGates passed: {before_gates} -> {after_gates}")
 
 
+STRUCTURED_TYPES = frozenset(
+    {
+        "NATIONAL_ID",
+        "IBAN",
+        "EMAIL",
+        "PHONE_NUMBER",
+        "CREDIT_CARD",
+        "IP_ADDRESS",
+        "URL",
+        "VEHICLE_PLATE",
+        "POSTAL_CODE",
+        "TAX_IDENTIFIER",
+        "BANK_ACCOUNT",
+    }
+)
+_ROLE_CUES = (
+    "davacı",
+    "davalı",
+    "alacaklı",
+    "borçlu",
+    "sanık",
+    "av.",
+    "avukat",
+    "hâkim",
+    "hakim",
+    "tanık",
+    "bilirkişi",
+    "keşide",
+    "müvekkil",
+    "claimant",
+    "defendant",
+    "plaintiff",
+    "judge",
+    "justice",
+    "solicitor",
+    "counsel",
+    "witness",
+    "appellant",
+    "petitioner",
+)
+
+
+def _rules_expected(text: str, entity: dict[str, Any]) -> bool:
+    """Structured identifiers and role-prefixed names are what rules-only should remove."""
+    label = str(entity["type"])
+    if label in STRUCTURED_TYPES:
+        return True
+    value = str(entity["text"])
+    if label == "COMPANY_NAME" and any(mark in value for mark in ("A.Ş.", "Ltd", "Şti")):
+        return True
+    if label not in PERSON_NAME_TYPES:
+        return False
+    window = text[max(0, int(entity["start"]) - 80) : int(entity["start"])].casefold()
+    return any(cue in window for cue in _ROLE_CUES)
+
+
+async def _product_predictions(text: str, language: str, mode: Any) -> tuple[set[tuple[int, int, str]], Any]:
+    from app.domain.models import PrivacyProfile
+    from app.services.jobs import JobStore
+    from app.services.pipeline import analyze_textual_document
+
+    store = JobStore(3600)
+    job = store.create_text(text)
+    job.requested_document_language = language
+    job.locale = language
+    try:
+        analysis = await analyze_textual_document(job, PrivacyProfile.GENERAL, None, mode)
+    finally:
+        store.delete(job.id)
+    predicted = {(entity.start, entity.end, entity.type.value) for entity in analysis.entities}
+    return predicted, analysis
+
+
+def _print_mode_line(label: str, metrics: dict[str, Any]) -> None:
+    print(
+        f"  {label}: P {metrics['precision']:.2%}  R {metrics['recall']:.2%}  "
+        f"F1 {metrics['f1']:.2%}  TP {metrics['tp']} FP {metrics['fp']} FN {metrics['fn']}"
+    )
+
+
+async def run_product(output: Path | None) -> int:
+    """Score the product pipeline. This is not the CI gate."""
+    from app.domain.models import DetectionMode, LocalNERStatus
+
+    corpus = load_corpus()
+    integrity = corpus_integrity_errors(corpus)
+    if integrity:
+        print("GOLD INTEGRITY FAILED:")
+        for error in integrity:
+            print(f"  - {error}")
+        return 1
+
+    print("\n" + "=" * 60)
+    print("PRODUCT PIPELINE (local only, not gated)")
+    print("=" * 60)
+    rules_rows: list[tuple[dict[str, Any], set[tuple[int, int, str]], set[tuple[int, int, str]]]] = []
+    for doc in corpus:
+        gold = {normalize_entity(entity) for entity in doc["gold_entities"]}
+        predicted, _analysis = await _product_predictions(
+            doc["text"], str(doc.get("language", "tr")), DetectionMode.RULES_ONLY
+        )
+        rules_rows.append((doc, predicted, gold))
+
+    probe = next(doc for doc in corpus if doc.get("language", "tr") == "tr")
+    _probe_predicted, probe_analysis = await _product_predictions(
+        probe["text"], "tr", DetectionMode.LOCAL_CONTEXT
+    )
+    ner_status = probe_analysis.local_ner_status
+    ner_code = probe_analysis.local_ner_error_code or ""
+    print(f"NER status: {ner_status.value} {ner_code}".rstrip())
+    if ner_status in {LocalNERStatus.UNAVAILABLE, LocalNERStatus.FAILED}:
+        print("LOCAL_CONTEXT did not run. Rules-only numbers are not a substitute.")
+        _print_product_scores("RULES_ONLY", rules_rows)
+        return 1
+
+    context_rows: list[tuple[dict[str, Any], set[tuple[int, int, str]], set[tuple[int, int, str]]]] = []
+    context_rows.append((probe, _probe_predicted, {normalize_entity(entity) for entity in probe["gold_entities"]}))
+    for doc in corpus:
+        if doc is probe:
+            continue
+        gold = {normalize_entity(entity) for entity in doc["gold_entities"]}
+        predicted, analysis = await _product_predictions(
+            doc["text"], str(doc.get("language", "tr")), DetectionMode.LOCAL_CONTEXT
+        )
+        if analysis.local_ner_status in {LocalNERStatus.UNAVAILABLE, LocalNERStatus.FAILED}:
+            print(f"NER status: {analysis.local_ner_status.value} {analysis.local_ner_error_code or ''}".rstrip())
+            print("LOCAL_CONTEXT did not run. Rules-only numbers are not a substitute.")
+            return 1
+        context_rows.append((doc, predicted, gold))
+
+    _print_product_scores("RULES_ONLY", rules_rows)
+    _print_product_scores("LOCAL_CONTEXT", context_rows)
+    report = {
+        "harness": "product",
+        "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "ner_status": ner_status.value,
+        "rules_only": _language_report(rules_rows),
+        "local_context": _language_report(context_rows),
+    }
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    path = save_report(report, output or (RUNS_DIR / f"{stamp}-product.json"))
+    print(f"Saved: {path}")
+    return 0
+
+
+def _language_pairs(
+    rows: list[tuple[dict[str, Any], set[tuple[int, int, str]], set[tuple[int, int, str]]]],
+    language: str,
+    *,
+    family: bool,
+) -> list[tuple[set[tuple[int, int, str]], set[tuple[int, int, str]]]]:
+    selected = []
+    for doc, predicted, gold in rows:
+        if doc.get("language", "tr") != language:
+            continue
+        if family:
+            predicted = _as_family(predicted)
+            gold = _as_family(gold)
+        selected.append((predicted, gold))
+    return selected
+
+
+def _language_report(
+    rows: list[tuple[dict[str, Any], set[tuple[int, int, str]], set[tuple[int, int, str]]]],
+) -> dict[str, Any]:
+    report: dict[str, Any] = {}
+    languages = sorted({str(doc.get("language", "tr")) for doc, _, _ in rows})
+    for language in languages:
+        report[language] = {
+            "strict": _score_pairs(_language_pairs(rows, language, family=False)),
+            "person_family": _score_pairs(_language_pairs(rows, language, family=True)),
+        }
+    return report
+
+
+def _print_product_scores(
+    mode: str,
+    rows: list[tuple[dict[str, Any], set[tuple[int, int, str]], set[tuple[int, int, str]]]],
+) -> None:
+    print(f"\n{mode}")
+    for language in ("tr", "en"):
+        pairs = _language_pairs(rows, language, family=False)
+        if not pairs:
+            continue
+        scored = _score_pairs(pairs)
+        label = "Turkish strict" if language == "tr" else "English strict (report only)"
+        _print_mode_line(label, scored["overall"])
+        family = _score_pairs(_language_pairs(rows, language, family=True))
+        _print_mode_line("  person-family", family["overall"])
+
+
+def _font_file() -> Path | None:
+    candidates = [
+        Path(r"C:\Windows\Fonts\arial.ttf"),
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        Path("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"),
+    ]
+    for path in candidates:
+        if path.is_file():
+            return path
+    return None
+
+
+def _write_pdf(path: Path, text: str, font_file: Path) -> None:
+    import pymupdf
+
+    document = pymupdf.open()
+    remaining = text
+    while remaining:
+        page = document.new_page()
+        page.insert_font(fontname="body", fontfile=str(font_file))
+        leftover = page.insert_textbox(
+            pymupdf.Rect(50, 50, 560, 800), remaining, fontname="body", fontsize=11
+        )
+        if not isinstance(leftover, str) or leftover == remaining:
+            break
+        remaining = leftover
+    document.save(path)
+    document.close()
+
+
+def _write_docx(path: Path, text: str) -> None:
+    from docx import Document
+
+    document = Document()
+    for paragraph in text.split("\n"):
+        document.add_paragraph(paragraph)
+    document.save(path)
+
+
+def _read_pdf_text(path: Path) -> str:
+    import pymupdf
+
+    document = pymupdf.open(path)
+    try:
+        return "\n".join(page.get_text() for page in document)
+    finally:
+        document.close()
+
+
+def _read_docx_text(path: Path) -> str:
+    from docx import Document
+
+    document = Document(str(path))
+    return "\n".join(paragraph.text for paragraph in document.paragraphs)
+
+
+async def run_e2e() -> int:
+    """Redact one PDF and one DOCX. Rules-expected leaks fail. NER gaps are reported."""
+    from app.domain.models import (
+        DetectionMode,
+        DocumentKind,
+        PrivacyProfile,
+        RedactionDecision,
+        RedactionRequest,
+        TransformationStrategy,
+    )
+    from app.services.jobs import JobStore
+    from app.services.pipeline import analyze_pdf, analyze_textual_document, apply_transformations
+
+    corpus = load_corpus()
+    source = next(
+        (
+            doc
+            for doc in corpus
+            if doc.get("id") == "tr-test-icra-001"
+        ),
+        None,
+    )
+    if source is None:
+        print("E2E source document tr-test-icra-001 is not in the corpus")
+        return 1
+    font = _font_file()
+    if font is None:
+        print("E2E needs a Unicode font and did not find one")
+        return 1
+
+    import tempfile
+
+    leaks: list[str] = []
+    gaps: list[str] = []
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        pdf_path = root / "sample.pdf"
+        docx_path = root / "sample.docx"
+        _write_pdf(pdf_path, source["text"], font)
+        _write_docx(docx_path, source["text"])
+        for kind, path, reader in (
+            ("PDF", pdf_path, _read_pdf_text),
+            ("DOCX", docx_path, _read_docx_text),
+        ):
+            store = JobStore(3600)
+            job = store.create(path.name, path.read_bytes(), DocumentKind[kind])
+            job.requested_document_language = "tr"
+            job.locale = "tr"
+            try:
+                if kind == "PDF":
+                    analysis = await analyze_pdf(job, PrivacyProfile.GENERAL, None, DetectionMode.RULES_ONLY)
+                else:
+                    analysis = await analyze_textual_document(
+                        job, PrivacyProfile.GENERAL, None, DetectionMode.RULES_ONLY
+                    )
+                decisions = [
+                    RedactionDecision(
+                        entity_id=entity.id,
+                        action="REDACT",
+                        strategy=TransformationStrategy.REDACT,
+                    )
+                    for entity in analysis.entities
+                ]
+                if not decisions:
+                    print(f"{kind}: the product found nothing to redact")
+                    return 1
+                _output, audit = await apply_transformations(
+                    job,
+                    RedactionRequest(decisions=decisions, output_format=kind),
+                    None,
+                )
+                extracted = reader(job.output_path)
+                validation = audit.validation
+                print(
+                    f"{kind} residual status: {validation.status.value} "
+                    f"messages={len(validation.residual_messages)}"
+                )
+            finally:
+                store.delete(job.id)
+            for entity in source["gold_entities"]:
+                if entity["text"] not in extracted:
+                    continue
+                if _rules_expected(source["text"], entity):
+                    leaks.append(f"{kind} {entity['type']} {entity['text']}")
+                else:
+                    gaps.append(f"{kind} {entity['type']} {entity['text']}")
+    print("\nRules-expected leaks:")
+    if leaks:
+        for item in leaks:
+            print(f"  - {item}")
+    else:
+        print("  none")
+    print("Known gaps (NER-needed, not a failure):")
+    if gaps:
+        for item in gaps:
+            print(f"  - {item}")
+    else:
+        print("  none")
+    return 1 if leaks else 0
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluate legacy rules-only detection.")
     parser.add_argument(
@@ -513,6 +861,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         metavar=("BEFORE", "AFTER"),
         type=Path,
         help="Print metric deltas between two saved runs and exit.",
+    )
+    parser.add_argument(
+        "--product",
+        action="store_true",
+        help="Local only. Score the product pipeline in RULES_ONLY and LOCAL_CONTEXT. Not the CI gate.",
+    )
+    parser.add_argument(
+        "--e2e",
+        action="store_true",
+        help="Local only. Redact one synthetic PDF and one DOCX through the product export and check for leaks.",
     )
     return parser.parse_args(argv)
 
@@ -532,6 +890,18 @@ def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     if args.compare:
         compare_reports(args.compare[0], args.compare[1])
+        return
+    if args.product and args.e2e:
+        raise SystemExit("Pass only one of --product and --e2e")
+    if args.product:
+        code = asyncio.run(run_product(args.output))
+        if code:
+            raise SystemExit(code)
+        return
+    if args.e2e:
+        code = asyncio.run(run_e2e())
+        if code:
+            raise SystemExit(code)
         return
     code = asyncio.run(run_evaluation(args.output))
     if code:
