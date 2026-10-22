@@ -39,17 +39,12 @@ Masked types, using the names in `EntityType`:
   `ORGANISATION`, `IP_ADDRESS`, `URL`, `SYSTEM_URL`, `UETS`, `UYAP_ACCESS`,
   `QR_CODE`, `SIGNATURE`, `PORT_NUMBER`, `MONEY_AMOUNT`
 
-`POLITICAL_INFORMATION` is still a value in `EntityType`, but it is not in
-this list. Do not label it. The scan drops it before a finding is shown:
 `drop_retired_detections` in `apps/api/app/detectors/registry.py` removes
-`POLITICAL_INFORMATION` and `MONEY_AMOUNT`. The name
-"retired" comes from that constant, `RETIRED_DETECTION_TYPES`. The changelog
-also says the political-opinion category was removed because it depended on
-a language-model review that DeID no longer runs. The enum value, the tag
-catalog, and a default redact recommendation are still in the code, so a
-finding of that type could still be masked if one were added by hand. The
-scan itself does not produce it, so political opinion is not masked.
-Removing the enum value is a separate code change. It is not done here.
+`MONEY_AMOUNT`. The name "retired" comes from that constant,
+`RETIRED_DETECTION_TYPES`. There is no political-opinion type. Do not label
+political opinion, religion, ethnicity, or trade-union membership. The
+changelog records that this category was removed with the old language-model
+review, and the enum value has now been removed as well.
 
 There is no salary type. Do not label a pay amount. `DATE`, `LOCATION`,
 `SYSTEM_URL`, `PORT_NUMBER`, and `MONEY_AMOUNT` may be labeled. Their
@@ -309,10 +304,10 @@ document or an employment contract. The amounts stay in the text.
 
 There is no salary entity type. Do not use `MONEY_AMOUNT` for pay.
 
-### POLITICAL_INFORMATION
+### Political opinion
 
 Not in the scope list. Do not label political opinion, religion, ethnicity,
-or trade-union membership. The enum value is still in the schema. See Scope.
+or trade-union membership. There is no political-opinion entity type.
 
 ### COURT_NAME
 

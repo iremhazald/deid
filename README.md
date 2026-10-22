@@ -63,15 +63,12 @@ Masked types:
   IP address, URL, system URL, UETS, UYAP access, QR code, signature, port
   number, money amount
 
-`POLITICAL_INFORMATION` remains in the `EntityType` enum, but it is not in
-this list. The scan drops it, together with `MONEY_AMOUNT`, in
-`drop_retired_detections`
+`MONEY_AMOUNT` is dropped by `drop_retired_detections`
 (`apps/api/app/detectors/registry.py`). The word "retired" is the name of
-that filter, `RETIRED_DETECTION_TYPES`. The changelog also records that the
-political-opinion category was removed with the old language-model review.
-The enum, the tag catalog, and a default redact recommendation are still in
-the code. The scan does not produce the finding, so political opinion is not
-masked. Removing the enum value would be a separate code change.
+that filter, `RETIRED_DETECTION_TYPES`. There is no political-opinion type.
+Do not label political opinion. The changelog records that this category
+was removed with the old language-model review, and the enum value has now
+been removed as well.
 
 There is no salary type. A calendar date that is not a birth date,
 a place that is not an address, a system URL, a port number, and a money

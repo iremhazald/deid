@@ -4,6 +4,12 @@ All notable changes and improvements to the DeID LegalTech platform.
 
 ## [Unreleased]
 
+- Political opinion is no longer a detected or masked type. It left `EntityType`,
+  the tag catalog, the placeholder prefixes, and the review labels. The
+  legacy-harness metrics did not move.
+- A detected date of birth that stays visible now counts in the
+  re-identification score. A calendar date still counts separately. The
+  legacy-harness metrics did not move.
 - The Turkish gold relabel moved the legacy-harness precision from 80.85% to
   88.30% and recall from 62.81% to 68.03% (121 gold spans to 122). Detectors,
   rules, and thresholds did not change. The same sentence belongs in

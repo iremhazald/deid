@@ -99,4 +99,4 @@ the earlier proposal.
 | tr-mixed-ultra-001 | Zehra Koç | PERSON_NAME | Mağdur has no entity type. Keep PERSON_NAME. |
 | tr-names-only-001 | Emre Çelik | PERSON_NAME | Dr. is not a legal role. The title stays outside the span. |
 | tr-salary-001 | 25.000 TL, 18.750 TL, 22.000 TL | SALARY_INFORMATION | Type is in the schema. Detectors currently drop it, so these three amounts stay false negatives. |
-| tr-religious-political-001 | sosyalist | (unlabeled) | POLITICAL_INFORMATION is retired. Leave religion, union membership, and political opinion unlabeled. |
+| tr-religious-political-001 | sosyalist | (unlabeled) | There is no political-opinion type. Leave religion, union membership, and political opinion unlabeled. |
