@@ -1,6 +1,13 @@
 # Pending gold-set decisions
 
-Not applied. Each row waits for a decision.
+Applied in the gold corpus, with two rejections and one text replacement.
+
+Rejected: `tr-mixed-hard-001` Şikayetçi stays `PERSON_NAME`. `tr-mixed-001`
+Dilekçe sahibi stays `PERSON_NAME`. `tr-location-001` uses the fictional
+name `Mavi Körfez Oteli` with `COMPANY_NAME`.
+
+The table below is the proposal that was reviewed. It is not a second list
+of pending edits.
 
 ## Proposed changes
 

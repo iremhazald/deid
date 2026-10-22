@@ -9,6 +9,51 @@ These rules are the standard for the current Turkish gold set and for any
 document added later. They are not a description of what the detectors do.
 If a detector misses a span that these rules label, that miss stays a miss.
 
+## Scope
+
+DeID masks a defined list of personal data types. It does not claim to
+comply with any data protection law.
+
+A gold label must be one of these types. Health details, criminal history,
+religion, trade-union membership, and political opinion are not on the list.
+Leave that content unlabeled, even when it sits next to a name or an
+identifier that is labeled.
+
+Masked types, using the names in `EntityType`:
+
+- Names: `PERSON_NAME`, `FIRST_NAME`, `LAST_NAME`, `ALIAS`, `CLAIMANT_NAME`,
+  `DEFENDANT_NAME`, `LAWYER_NAME`, `JUDGE_NAME`, `WITNESS_NAME`,
+  `EXPERT_NAME`
+- Identifiers: `NATIONAL_ID`, `PASSPORT_NUMBER`, `TAX_IDENTIFIER`,
+  `EMPLOYEE_ID`, `CUSTOMER_ID`, `PROFESSIONAL_ID`, `OTHER_IDENTIFIER`
+- Contact and place: `ADDRESS`, `EMAIL`, `PHONE_NUMBER`, `POSTAL_CODE`,
+  `BIRTH_PLACE`, `VEHICLE_PLATE`
+- Financial: `IBAN`, `BANK_ACCOUNT`, `CREDIT_CARD`, `FINANCIAL_IDENTIFIER`,
+  `SALARY_INFORMATION`
+- Case and court: `COURT_NAME`, `CASE_NUMBER`, `FILE_NUMBER`,
+  `DECISION_NUMBER`
+- Other recorded types: `DATE`, `DATE_OF_BIRTH`, `LOCATION`, `COMPANY_NAME`,
+  `ORGANISATION`, `IP_ADDRESS`, `URL`, `SYSTEM_URL`, `UETS`, `UYAP_ACCESS`,
+  `QR_CODE`, `SIGNATURE`, `PORT_NUMBER`, `MONEY_AMOUNT`
+
+`POLITICAL_INFORMATION` is still a value in `EntityType`, but it is not in
+this list. Do not label it. The scan drops it before a finding is shown:
+`drop_retired_detections` in `apps/api/app/detectors/registry.py` removes
+`POLITICAL_INFORMATION`, `SALARY_INFORMATION`, and `MONEY_AMOUNT`. The name
+"retired" comes from that constant, `RETIRED_DETECTION_TYPES`. The changelog
+also says the political-opinion category was removed because it depended on
+a language-model review that DeID no longer runs. The enum value, the tag
+catalog, and a default redact recommendation are still in the code, so a
+finding of that type could still be masked if one were added by hand. The
+scan itself does not produce it, so political opinion is not masked.
+Removing the enum value is a separate code change. It is not done here.
+
+`SALARY_INFORMATION` stays on the mask list. The same detector filter
+currently discards it, so salary gold spans are expected misses until that
+filter changes. `DATE`, `LOCATION`, `SYSTEM_URL`, `PORT_NUMBER`, and
+`MONEY_AMOUNT` may be labeled. Their default recommendation is to leave the
+text visible unless a reviewer chooses otherwise.
+
 ## What is labeled
 
 Label a span when it identifies a natural person, a specific case, or a
@@ -29,9 +74,8 @@ organisation that is a party, an employer, or the sender of a letter.
   number, but fails the production validator, is not that type and is not
   `OTHER_IDENTIFIER`.
 - Prices, tax rates, and invoice totals that are not a person's pay.
-- Religion, ethnicity, trade-union membership, and political opinion. The
-  schema still contains `POLITICAL_INFORMATION`. Do not label those phrases.
-  The product retired that category.
+- Religion, ethnicity, trade-union membership, political opinion, health
+  details, and criminal history. They are outside the scope list above.
 - A role title with no name: `Dr.`, `Av.`, `the claimant`, `savcı`.
 
 A negative document contains none of the labeled categories. It may contain
@@ -62,27 +106,34 @@ the look-alikes above.
 - A full name is one span. Do not also label the given name and the surname
   inside it. A later surname alone (`Kaya` after `Mehmet Kaya`) is
   `LAST_NAME`. A given name alone is `FIRST_NAME`.
-- Nested spans of different types are allowed. A postal code inside a street
-  address is part of `ADDRESS` and is also its own `POSTAL_CODE`.
+## Nested spans
+
+Nested spans are allowed when two in-scope types describe the same text.
+A postal code inside a street address is part of the `ADDRESS` span and is
+also its own `POSTAL_CODE` span. Do not nest two spans of the same type.
 
 ## Role names
 
-Use a role type when a role word in the same clause names that person. The
-role word stays outside the span. If two roles apply, use the more specific
-legal role. If no role type exists, use `PERSON_NAME`.
+Use a role type only when the role is clear from the text in that clause.
+The role word stays outside the span. If the schema has no type for the
+role, use `PERSON_NAME`.
 
 | Role words | Type |
 |---|---|
-| Davacı, dilekçe sahibi, şikayetçi, alacaklı, claimant, plaintiff, applicant | `CLAIMANT_NAME` |
-| Davalı, sanık, borçlu, defendant, respondent, accused | `DEFENDANT_NAME` |
+| Davacı, alacaklı, claimant, plaintiff, applicant | `CLAIMANT_NAME` |
+| Davalı, borçlu, sanık, defendant, respondent, accused | `DEFENDANT_NAME` |
+| Şikayetçi, mağdur, dilekçe sahibi, savcı, zabıt kâtibi | `PERSON_NAME` |
 | Av., avukat, müdafi, vekil, counsel, solicitor, attorney | `LAWYER_NAME` |
 | Hâkim, yargıç, Justice (when it is the judge's title) | `JUDGE_NAME` |
 | Tanık, witness | `WITNESS_NAME` |
 | Bilirkişi, expert | `EXPERT_NAME` |
 
-There is no type for a prosecutor (`savcı`), a clerk (`zabıt kâtibi`), or a
-victim (`mağdur`). Those names are `PERSON_NAME`. `Dr.`, `Prof.`, `mimar`,
-and `mühendis` are not legal roles.
+There is no schema type yet for a criminal complainant (`şikayetçi`), a
+victim (`mağdur`), the author of a petition (`dilekçe sahibi`), a prosecutor
+(`savcı`), or a clerk (`zabıt kâtibi`). Those names stay `PERSON_NAME` until
+the schema has types for them. `Dr.`, `Prof.`, `mimar`, and `mühendis` are
+not legal roles. A role phrase with no person, such as `Hâkimler ve Savcılar
+Kurulu` or `the Claimant's case`, is not a name.
 
 ## Checksums
 
@@ -258,15 +309,16 @@ Incorrect: `Toplam tutar: 15.750 TL` on an invoice, or `KDV oranı %20`.
 
 ### POLITICAL_INFORMATION
 
-Do not label. The enum value remains in the schema and is retired in the
-product. Political opinion, religion, ethnicity, and union membership stay
-unlabeled.
+Not in the scope list. Do not label political opinion, religion, ethnicity,
+or trade-union membership. The enum value is still in the schema. See Scope.
 
 ### COURT_NAME
 
 The proper name of the specific court that is the forum of the document.
-Include the city, the ordinal, and the chamber. Stop before the docket
-clause.
+`COURT_NAME` labels the full caption for detection. Include the city, the
+ordinal, and the chamber. Stop before the docket clause. Masking only part
+of that caption, such as the court number, is a masking-policy decision. It
+does not change the label or the span.
 
 Correct: `İstanbul 2. Asliye Hukuk Mahkemesi`.
 Incorrect: `İstanbul 2. Asliye Hukuk Mahkemesi, Esas No: 2021/456`, or
@@ -312,11 +364,12 @@ clause calls the person counsel.
 
 ### CLAIMANT_NAME
 
-The claiming party: davacı, dilekçe sahibi, şikayetçi, alacaklı, claimant,
-plaintiff, applicant.
+The claiming party when the text itself shows that role: davacı, alacaklı,
+claimant, plaintiff, applicant. A criminal complainant (`şikayetçi`) and a
+petition author (`dilekçe sahibi`) stay `PERSON_NAME`.
 
 Correct: `Davacı Mehmet Kaya` → `Mehmet Kaya`.
-Incorrect: `PERSON_NAME` for that span, or including `Davacı`.
+Incorrect: `Şikayetçi: Cem Acar` as `CLAIMANT_NAME`, or including `Davacı`.
 
 ### DEFENDANT_NAME
 
@@ -464,9 +517,8 @@ Incorrect: a TCKN, an IBAN, or a 4-digit branch code.
 Do not invent labels for these. Use `PERSON_NAME` for the person, and leave
 the descriptive phrase unlabeled.
 
-- Prosecutor (`savcı`) and clerk (`zabıt kâtibi`).
-- Victim (`mağdur`).
-- Diagnosis, medication, and criminal sentences. There is no
-  `HEALTH_INFORMATION` or `CRIMINAL_INFORMATION` type.
+- Criminal complainant (`şikayetçi`), victim (`mağdur`), petition author
+  (`dilekçe sahibi`), prosecutor (`savcı`), and clerk (`zabıt kâtibi`).
+- Diagnosis, medication, and criminal sentences. They are out of scope.
 - Initials. `M.K.` is `PERSON_NAME`. `INITIALS` is a redaction strategy, not
   an entity type.

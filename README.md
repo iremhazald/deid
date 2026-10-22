@@ -36,6 +36,47 @@ detection.
 - **Bilingual interface** — Turkish and English UI with document-language-aware
   placeholder tags
 
+## Scope
+
+DeID masks a defined list of personal data types. It does not claim to
+comply with any data protection law.
+
+Health details, criminal history, religion, trade-union membership, and
+political opinion are not masked. Leave that content unlabeled.
+
+Masked types:
+
+- Names: person, given name, surname, alias, claimant, defendant, lawyer,
+  judge, witness, expert
+- Identifiers: national ID, passport, tax number, employee ID, customer ID,
+  professional register number, other identifier
+- Contact and place: address, email, phone, postal code, birthplace, vehicle
+  plate
+- Financial: IBAN, bank account, credit card, other financial identifier, salary
+- Case and court: court name, case number, file number, decision number
+- Other recorded types: date, date of birth, location, company, organisation,
+  IP address, URL, system URL, UETS, UYAP access, QR code, signature, port
+  number, money amount
+
+`POLITICAL_INFORMATION` remains in the `EntityType` enum, but it is not in
+this list. The scan drops it, together with `SALARY_INFORMATION` and
+`MONEY_AMOUNT`, in `drop_retired_detections`
+(`apps/api/app/detectors/registry.py`). The word "retired" is the name of
+that filter, `RETIRED_DETECTION_TYPES`. The changelog also records that the
+political-opinion category was removed with the old language-model review.
+The enum, the tag catalog, and a default redact recommendation are still in
+the code. The scan does not produce the finding, so political opinion is not
+masked. Removing the enum value would be a separate code change.
+
+Salary stays on the mask list. The same filter currently discards it, so a
+normal scan does not mask salary. A calendar date that is not a birth date,
+a place that is not an address, a system URL, a port number, and a money
+amount may be labeled. Their default recommendation is to leave the text
+visible unless a reviewer chooses otherwise.
+
+The annotation rules and the same list are in
+[evaluation/ANNOTATION_GUIDELINES.md](evaluation/ANNOTATION_GUIDELINES.md).
+
 ## How It Works
 
 ```
