@@ -81,7 +81,10 @@ python evaluation/evaluate_rules.py --compare evaluation/runs/before.json evalua
 
 The default command is the CI gate. It scores the legacy detector list plus
 structural label hits, without the product merge that runs after those
-detectors. Each run writes `evaluation/runs/<utc>-legacy_rules.json`.
+detectors. Before scoring, it checks every gold span: `text[start:end]` must
+equal the gold text, and every label must be an `EntityType` on the scope
+list in `ANNOTATION_GUIDELINES.md`. `POLITICAL_INFORMATION` fails that check.
+A failed check stops the run, so CI fails before any metric is printed. Each run writes `evaluation/runs/<utc>-legacy_rules.json`.
 `--compare` prints precision, recall, F1, and count deltas between two saved
 files and does not apply the gates.
 

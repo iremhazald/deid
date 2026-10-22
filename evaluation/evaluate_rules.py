@@ -31,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "apps" / "api"))
 
 from app.detectors.registry import PageText, run_detectors
 from app.detectors.structural import run_structural_detectors
+from app.domain.models import EntityType
 
 
 CORPUS_PATH = Path(__file__).parent / "test_corpus.jsonl"
@@ -61,11 +62,56 @@ CRITICAL_CATEGORIES = {
 }
 CRITICAL_RECALL_THRESHOLD = 0.95  # 95% recall for critical PII categories
 
+# Gold may use every EntityType except types the scope section leaves unmasked.
+# POLITICAL_INFORMATION stays in the enum, but the guidelines exclude it.
+OUT_OF_SCOPE_TYPES = frozenset({EntityType.POLITICAL_INFORMATION.value})
+
 
 def load_corpus() -> list[dict[str, Any]]:
     """Load JSONL test corpus."""
     with CORPUS_PATH.open("r", encoding="utf-8") as f:
         return [json.loads(line) for line in f if line.strip()]
+
+
+def corpus_integrity_errors(corpus: list[dict[str, Any]]) -> list[str]:
+    """Reject gold rows whose span or label cannot be scored."""
+    allowed = {item.value for item in EntityType}
+    errors: list[str] = []
+    for doc in corpus:
+        doc_id = str(doc.get("id", "?"))
+        text = doc.get("text")
+        if not isinstance(text, str):
+            errors.append(f"{doc_id}: text is missing")
+            continue
+        entities = doc.get("gold_entities")
+        if not isinstance(entities, list):
+            errors.append(f"{doc_id}: gold_entities is missing")
+            continue
+        for entity in entities:
+            label = entity.get("type")
+            value = entity.get("text")
+            start = entity.get("start")
+            end = entity.get("end")
+            if not isinstance(label, str):
+                errors.append(f"{doc_id}: a gold label is missing")
+                continue
+            if label not in allowed:
+                errors.append(f"{doc_id}: {label} is not an EntityType")
+                continue
+            if label in OUT_OF_SCOPE_TYPES:
+                errors.append(f"{doc_id}: {label} is outside the scope list")
+                continue
+            if not isinstance(value, str) or not isinstance(start, int) or not isinstance(end, int):
+                errors.append(f"{doc_id}: {label} is missing text or integer offsets")
+                continue
+            if start < 0 or end > len(text) or start > end:
+                errors.append(f"{doc_id}: {label} span {start}:{end} is outside the text")
+                continue
+            if text[start:end] != value:
+                errors.append(
+                    f"{doc_id}: {label} {start}:{end} does not match the gold text"
+                )
+    return errors
 
 
 def normalize_entity(entity: dict[str, Any]) -> tuple[int, int, str]:
@@ -135,6 +181,12 @@ async def detect_rules_only(text: str) -> set[tuple[int, int, str]]:
 async def evaluate() -> dict[str, Any]:
     """Evaluate rule-based detection on corpus with overlap-based matching."""
     corpus = load_corpus()
+    integrity = corpus_integrity_errors(corpus)
+    if integrity:
+        print("GOLD INTEGRITY FAILED:")
+        for error in integrity:
+            print(f"  - {error}")
+        raise SystemExit(1)
     category_stats: dict[str, dict[str, int]] = defaultdict(
         lambda: {"tp": 0, "fp": 0, "fn": 0}
     )
