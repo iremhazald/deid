@@ -116,22 +116,51 @@ Use a role type only when the role is clear from the text in that clause.
 The role word stays outside the span. If the schema has no type for the
 role, use `PERSON_NAME`.
 
+### Turkish
+
 | Role words | Type |
 |---|---|
-| Davacı, alacaklı, claimant, plaintiff, applicant | `CLAIMANT_NAME` |
-| Davalı, borçlu, sanık, defendant, respondent, accused | `DEFENDANT_NAME` |
+| Davacı, alacaklı | `CLAIMANT_NAME` |
+| Davalı, borçlu, sanık | `DEFENDANT_NAME` |
+| Av., avukat, müdafi, and vekil when the clause shows a lawyer acting in proceedings | `LAWYER_NAME` |
+| Vekil appointed in a vekâletname | `PERSON_NAME` |
+| Hâkim, yargıç | `JUDGE_NAME` |
+| Tanık | `WITNESS_NAME` |
+| Bilirkişi | `EXPERT_NAME` |
 | Şikayetçi, mağdur, dilekçe sahibi, savcı, zabıt kâtibi | `PERSON_NAME` |
-| Av., avukat, müdafi, vekil, counsel, solicitor, attorney | `LAWYER_NAME` |
-| Hâkim, yargıç, Justice (when it is the judge's title) | `JUDGE_NAME` |
-| Tanık, witness | `WITNESS_NAME` |
-| Bilirkişi, expert | `EXPERT_NAME` |
 
-There is no schema type yet for a criminal complainant (`şikayetçi`), a
-victim (`mağdur`), the author of a petition (`dilekçe sahibi`), a prosecutor
-(`savcı`), or a clerk (`zabıt kâtibi`). Those names stay `PERSON_NAME` until
-the schema has types for them. `Dr.`, `Prof.`, `mimar`, and `mühendis` are
-not legal roles. A role phrase with no person, such as `Hâkimler ve Savcılar
-Kurulu` or `the Claimant's case`, is not a name.
+A vekil named in a vekâletname is the appointed agent, not a lawyer, even
+when a lawyer could have been appointed. A vekil who appears as counsel in
+a hearing, a petition, or a judgment is `LAWYER_NAME`.
+
+### English
+
+| Role words | Type |
+|---|---|
+| Claimant, Plaintiff, Petitioner, and Applicant when the person is a party to legal proceedings | `CLAIMANT_NAME` |
+| Defendant, Accused, and Respondent when the person is a party to legal proceedings | `DEFENDANT_NAME` |
+| Solicitor, Counsel, Barrister, and Attorney when it means a legal professional | `LAWYER_NAME` |
+| Judge, Justice, Master, Magistrate | `JUDGE_NAME` |
+| Witness | `WITNESS_NAME` |
+| Expert | `EXPERT_NAME` |
+| Attorney-in-fact, and an attorney appointed under a power of attorney | `PERSON_NAME` |
+| Prosecutor, District Attorney, State's Attorney, Crown Prosecutor, and similar prosecutor titles | `PERSON_NAME` |
+| Complainant, Victim, Clerk | `PERSON_NAME` |
+| Appellant, Appellee | The first-instance role, when the text states it. Otherwise `PERSON_NAME` |
+| Arbitrator, Mediator | `PERSON_NAME` |
+| A job applicant, or a survey respondent | `PERSON_NAME` |
+
+`Master` and `Justice` count only when they are the judicial title.
+`Appellant` and `Appellee` do not reveal who filed the original claim: use
+`CLAIMANT_NAME` or `DEFENDANT_NAME` only when the text states that
+first-instance role.
+
+There is no schema type yet for a criminal complainant, a victim, the author
+of a petition (`dilekçe sahibi`), a prosecutor, a clerk, an arbitrator, or a
+mediator. Those names stay `PERSON_NAME` until the schema has types for
+them. `Dr.`, `Prof.`, `mimar`, and `mühendis` are not legal roles. A role
+phrase with no person, such as `Hâkimler ve Savcılar Kurulu` or `the
+Claimant's case`, is not a name.
 
 ## Checksums
 
