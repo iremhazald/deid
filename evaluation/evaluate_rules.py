@@ -62,9 +62,9 @@ CRITICAL_CATEGORIES = {
 }
 CRITICAL_RECALL_THRESHOLD = 0.95  # 95% recall for critical PII categories
 
-# Gold may use every EntityType except types the scope section leaves unmasked.
-# POLITICAL_INFORMATION stays in the enum, but the guidelines exclude it.
-OUT_OF_SCOPE_TYPES = frozenset({EntityType.POLITICAL_INFORMATION.value})
+# Gold may use every EntityType. A label that is not in the enum fails below.
+# Political opinion is not an EntityType.
+OUT_OF_SCOPE_TYPES: frozenset[str] = frozenset()
 
 
 def load_corpus() -> list[dict[str, Any]]:

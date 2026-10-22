@@ -750,7 +750,6 @@ const PLACEHOLDER_TR: Record<string, string> = {
   IP_ADDRESS: 'IP',
   URL: 'URL',
   VEHICLE_PLATE: 'PLAKA',
-  POLITICAL_INFORMATION: 'SİYASİ',
 }
 
 const PLACEHOLDER_EN: Record<string, string> = {
@@ -799,7 +798,6 @@ const PLACEHOLDER_EN: Record<string, string> = {
   IP_ADDRESS: 'IP',
   URL: 'URL',
   VEHICLE_PLATE: 'VEHICLE_PLATE',
-  POLITICAL_INFORMATION: 'POLITICAL',
 }
 
 const UNNUMBERED_PLACEHOLDER = new Set([
@@ -807,7 +805,6 @@ const UNNUMBERED_PLACEHOLDER = new Set([
   'POSTAL_CODE',
   'MONEY_AMOUNT',
   'COURT_NAME',
-  'POLITICAL_INFORMATION',
   'SIGNATURE',
   'QR_CODE',
   'UYAP_ACCESS',

@@ -29,7 +29,6 @@ from app.domain.models import DetectionMethod, EntityCandidate, EntityType, Veri
 RETIRED_DETECTION_TYPES = frozenset(
     {
         EntityType.MONEY_AMOUNT,
-        EntityType.POLITICAL_INFORMATION,
     }
 )
 

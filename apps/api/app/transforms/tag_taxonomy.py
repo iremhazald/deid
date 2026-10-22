@@ -91,7 +91,6 @@ PLACEHOLDER_DISCOURAGED: frozenset[EntityType] = frozenset(
         EntityType.SYSTEM_URL,
         EntityType.COMPANY_NAME,
         EntityType.ORGANISATION,
-        EntityType.POLITICAL_INFORMATION,
         EntityType.COURT_NAME,
     }
 )
@@ -602,18 +601,6 @@ TAG_SPECS: dict[EntityType, TagSpec] = {
         tr="TUTAR",
         en="AMOUNT",
         notes="Descriptive attribute. Default remains KEEP. Explicit PLACEHOLDER yields generic [TUTAR].",
-    ),
-    EntityType.POLITICAL_INFORMATION: _spec(
-        "POLITICAL",
-        "POLITICAL_INFORMATION",
-        numbered=False,
-        reuse=False,
-        role_propagation="n/a",
-        recommended=False,
-        allowed=True,
-        tr="SİYASİ",
-        en="POLITICAL",
-        notes="Special-category political opinion/affiliation. Default REDACT.",
     ),
     EntityType.SIGNATURE: _spec(
         "SIGNATURE",
