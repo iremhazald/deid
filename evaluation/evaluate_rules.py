@@ -316,7 +316,89 @@ async def evaluate() -> dict[str, Any]:
         "by_difficulty": _slice_table(turkish_rows, "difficulty"),
         "by_document_type": _slice_table(turkish_rows, "document_type"),
         "gold_support": dict(support),
+        "path_label": "Path: legacy detectors plus unmerged structural hits",
+        "gate_label": "Gates: strict match, Turkish documents",
     }
+
+
+async def evaluate_product_rules() -> dict[str, Any]:
+    """Product rules-only path. English is scored here and is not gated."""
+    from app.domain.models import DetectionMode
+
+    corpus = load_corpus()
+    integrity = corpus_integrity_errors(corpus)
+    if integrity:
+        print("GOLD INTEGRITY FAILED:")
+        for error in integrity:
+            print(f"  - {error}")
+        raise SystemExit(1)
+
+    detected: list[tuple[dict[str, Any], set[tuple[int, int, str]], set[tuple[int, int, str]]]] = []
+    for doc in corpus:
+        gold_entities = {normalize_entity(entity) for entity in doc["gold_entities"]}
+        predicted, _analysis = await _product_predictions(
+            doc["text"], str(doc.get("language", "tr")), DetectionMode.RULES_ONLY
+        )
+        detected.append((doc, predicted, gold_entities))
+
+    def pairs_for(language: str, *, family: bool) -> list[tuple[set, set]]:
+        selected = []
+        for doc, predicted, gold in detected:
+            if doc.get("language", "tr") != language:
+                continue
+            if family:
+                predicted = _as_family(predicted)
+                gold = _as_family(gold)
+            selected.append((predicted, gold))
+        return selected
+
+    by_language: dict[str, Any] = {}
+    languages = sorted({str(doc.get("language", "tr")) for doc, _, _ in detected})
+    for language in languages:
+        documents = [doc for doc, _, _ in detected if doc.get("language", "tr") == language]
+        by_language[language] = {
+            "corpus_size": len(documents),
+            "detectors_loaded": True,
+            "strict": _score_pairs(pairs_for(language, family=False)),
+            "person_family": _score_pairs(pairs_for(language, family=True)),
+        }
+    turkish = by_language["tr"]
+    turkish_rows = [
+        (doc, predicted, gold)
+        for doc, predicted, gold in detected
+        if doc.get("language", "tr") == "tr"
+    ]
+    support: dict[str, dict[str, int]] = defaultdict(dict)
+    for doc in corpus:
+        language = str(doc.get("language", "tr"))
+        counts: Counter[str] = Counter(entity["type"] for entity in doc["gold_entities"])
+        for label, count in counts.items():
+            support[language][label] = support[language].get(label, 0) + count
+    for language in support:
+        support[language] = dict(sorted(support[language].items()))
+    return {
+        "corpus_size": turkish["corpus_size"],
+        "overall": turkish["strict"]["overall"],
+        "by_category": turkish["strict"]["by_category"],
+        "by_language": by_language,
+        "by_difficulty": _slice_table(turkish_rows, "difficulty"),
+        "by_document_type": _slice_table(turkish_rows, "document_type"),
+        "gold_support": dict(support),
+        "path_label": "Path: product rules-only",
+        "gate_label": "Gates: strict match, Turkish documents",
+    }
+
+
+async def run_product_gate(output: Path | None) -> int:
+    results = await evaluate_product_rules()
+    failures = gate_failures(results)
+    passed = print_results(results)
+    report = build_report(results, failures)
+    report["harness"] = "product_rules"
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    path = save_report(report, output or (RUNS_DIR / f"{stamp}-product_rules.json"))
+    print(f"Saved: {path}")
+    return 0 if passed else 1
 
 
 def gate_failures(results: dict[str, Any]) -> list[str]:
@@ -413,8 +495,8 @@ def print_results(results: dict[str, Any]) -> bool:
     """Pretty-print evaluation results. Status words are ASCII for Windows consoles."""
     print("\n" + "=" * 60)
     print("RULES-ONLY DETECTION EVALUATION")
-    print("Path: legacy detectors plus unmerged structural hits")
-    print("Gates: strict match, Turkish documents")
+    print(results.get("path_label", "Path: legacy detectors plus unmerged structural hits"))
+    print(results.get("gate_label", "Gates: strict match, Turkish documents"))
     print("=" * 60)
     print(f"Corpus size: {results['corpus_size']} Turkish documents\n")
 
@@ -433,7 +515,13 @@ def print_results(results: dict[str, Any]) -> bool:
     english = by_language.get("en")
     if english is not None and english["corpus_size"]:
         print("\n" + "=" * 60)
-        print("English detectors not loaded on this path")
+        if english.get("detectors_loaded") is False:
+            print("English detectors not loaded on this path")
+        else:
+            print(f"ENGLISH REPORT ONLY ({english['corpus_size']} documents, not gated)")
+            _print_overall("STRICT:", english["strict"])
+            _print_overall("PERSON-FAMILY:", english["person_family"])
+            print("English gate is not armed.")
 
     print("\n" + "=" * 60)
 
@@ -936,6 +1024,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Local only. Score the product pipeline in RULES_ONLY and LOCAL_CONTEXT. Not the CI gate.",
     )
     parser.add_argument(
+        "--legacy",
+        action="store_true",
+        help="Report-only legacy detector path. Not the CI gate.",
+    )
+    parser.add_argument(
         "--e2e",
         action="store_true",
         help="Local only. Redact one synthetic PDF and one DOCX through the product export and check for leaks.",
@@ -959,8 +1052,8 @@ def main(argv: list[str] | None = None) -> None:
     if args.compare:
         compare_reports(args.compare[0], args.compare[1])
         return
-    if args.product and args.e2e:
-        raise SystemExit("Pass only one of --product and --e2e")
+    if args.product and args.e2e or args.legacy and (args.product or args.e2e):
+        raise SystemExit("Pass only one of --legacy, --product, and --e2e")
     if args.product:
         code = asyncio.run(run_product(args.output))
         if code:
@@ -971,7 +1064,11 @@ def main(argv: list[str] | None = None) -> None:
         if code:
             raise SystemExit(code)
         return
-    code = asyncio.run(run_evaluation(args.output))
+    if args.legacy:
+        asyncio.run(run_evaluation(args.output))
+        print("Legacy path is report-only for one release and is not the CI gate.")
+        return
+    code = asyncio.run(run_product_gate(args.output))
     if code:
         raise SystemExit(code)
 

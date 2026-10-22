@@ -66,8 +66,8 @@ The same run also reports a person-family match. `PERSON_NAME`, `FIRST_NAME`,
 `LAST_NAME`, `ALIAS`, `CLAIMANT_NAME`, `DEFENDANT_NAME`, `LAWYER_NAME`,
 `JUDGE_NAME`, `WITNESS_NAME`, and `EXPERT_NAME` count as one type. The
 difference shows whether a person was missed or only the role was wrong.
-Person-family numbers are not gated. English documents are in the corpus, and
-this command does not score them: the legacy detector list has no English pack.
+Person-family numbers are not gated. The product path scores English and
+does not merge it into the Turkish total. `--legacy` does not score English.
 
 ## Thresholds
 
@@ -82,8 +82,7 @@ PERSON_NAME and CREDIT_CARD are excluded from critical 95% recall gates because:
 Each category line prints its gold count. Precision, recall, and F1 are also
 printed by difficulty and by document type. A category, difficulty, or document
 type with fewer than 10 gold entities is marked `low sample`. The flag does
-not fail CI. English gold counts are printed without a score, because this
-command does not load the English detectors.
+not fail CI.
 
 ## Running
 
@@ -91,23 +90,23 @@ command does not load the English detectors.
 python evaluation/evaluate_rules.py
 python evaluation/evaluate_rules.py --output evaluation/runs/custom.json
 python evaluation/evaluate_rules.py --compare evaluation/runs/before.json evaluation/runs/after.json
+python evaluation/evaluate_rules.py --legacy
 python evaluation/evaluate_rules.py --product
 python evaluation/evaluate_rules.py --e2e
 ```
 
-The default command is the CI gate. It scores the legacy detector list plus
-structural label hits, without the product merge that runs after those
-detectors. `--product` scores that product pipeline on plain text, once in
-rules-only and once with local NER, and is not gated. If the NER model is
-missing, that run fails instead of presenting the rules-only numbers as the
-NER result. `--e2e` builds one synthetic PDF and one DOCX, redacts them
-through the product export in rules-only mode, and fails when a structured
-identifier or a role-prefixed name is still in the output. Other remaining
-gold values are printed as known gaps. Before scoring, it checks every gold span: `text[start:end]` must
+The default command is the CI gate. It scores the product rules-only path:
+deterministic detectors for the document language, then the product merge.
+`--legacy` runs the previous list and is report-only for one release.
+`--product` also runs local NER and is not gated. If that model is missing,
+the run fails instead of presenting rules-only numbers as the NER result.
+`--e2e` redacts one synthetic PDF and one DOCX and fails when a structured
+identifier or a role-prefixed name remains. Other remaining gold values are
+known gaps. Before scoring, it checks every gold span: `text[start:end]` must
 equal the gold text, and every label must be an `EntityType` on the scope
 list in `ANNOTATION_GUIDELINES.md`. A label that is not an `EntityType` fails
 that check.
-A failed check stops the run, so CI fails before any metric is printed. Each run writes `evaluation/runs/<utc>-legacy_rules.json`.
+A failed check stops the run, so CI fails before any metric is printed. Each run writes `evaluation/runs/<utc>-product_rules.json`.
 `--compare` prints precision, recall, F1, and count deltas between two saved
 files and does not apply the gates.
 
@@ -120,8 +119,17 @@ V1 does not evaluate an external or generative LLM path.
 
 ## Part 4
 
-The CI gate is still this legacy command. Part 4 moves that gate to the
-product rules-only path and keeps this command as a report for one release.
-On the product path, English has its own gate for `EMAIL`, `PHONE_NUMBER`,
-`IBAN`, and `NATIONAL_ID`. That gate is not merged into the Turkish total.
-The gold set has at least ten examples of each of those four.
+The CI command is now the product rules-only path. `--legacy` keeps the
+previous detector list as a report for one release and does not gate CI.
+
+On this gold set the legacy path is 86.17% precision and 76.22% recall
+(218 true positives, 35 false positives, 68 false negatives). The product
+rules-only path is 90.83% precision and 76.22% recall (218 true positives,
+22 false positives, 68 false negatives). Recall is unchanged. The precision
+move is the product merge dropping false positives, not a detector change.
+
+English is scored on this path and is not merged into the Turkish total.
+A separate English gate for `EMAIL`, `PHONE_NUMBER`, `IBAN`, and
+`NATIONAL_ID` is the intended next check. It is not armed: on the product
+rules-only path email recall is 100%, phone recall is 0%, IBAN recall is
+77.42%, and national-id recall is 60%. Arming the 95% bar would fail CI.

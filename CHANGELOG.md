@@ -4,7 +4,12 @@ All notable changes and improvements to the DeID LegalTech platform.
 
 ## [Unreleased]
 
-- Political opinion is no longer a detected or masked type. It left `EntityType`,
+- CI now scores the product rules-only path. On this gold set that measurement
+  is 90.83% precision and 76.22% recall, against 86.17% and 76.22% on the
+  legacy path. Recall is unchanged. The precision difference is the product
+  merge, not a detector change. `--legacy` remains report-only for one release.
+  An English gate for email, phone, IBAN, and national ID is not armed: phone
+  recall is 0%, IBAN recall is 77.42%, and national-id recall is 60%.
   the tag catalog, the placeholder prefixes, and the review labels. The
   legacy-harness metrics did not move.
 - A detected date of birth that stays visible now counts in the
