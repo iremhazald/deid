@@ -9,6 +9,10 @@ name `Mavi Körfez Oteli` with `COMPANY_NAME`.
 The table below is the proposal that was reviewed. It is not a second list
 of pending edits.
 
+A later decision took salary out of scope. The three amounts in
+`tr-salary-001` are unlabeled. The row in "No change recommended" records
+the earlier proposal.
+
 ## Proposed changes
 
 | Document | Span | Current label | Proposed label | Reason |

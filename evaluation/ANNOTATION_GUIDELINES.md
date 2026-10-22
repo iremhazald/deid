@@ -15,9 +15,13 @@ DeID masks a defined list of personal data types. It does not claim to
 comply with any data protection law.
 
 A gold label must be one of these types. Health details, criminal history,
-religion, trade-union membership, and political opinion are not on the list.
-Leave that content unlabeled, even when it sits next to a name or an
-identifier that is labeled.
+religion, trade-union membership, political opinion, and salary amounts are
+not on the list. Leave that content unlabeled, even when it sits next to a
+name or an identifier that is labeled.
+
+Salary amounts are not masked and are not counted in the re-identification
+risk score, so a salary combined with other details can still point to a
+person.
 
 Masked types, using the names in `EntityType`:
 
@@ -28,8 +32,7 @@ Masked types, using the names in `EntityType`:
   `EMPLOYEE_ID`, `CUSTOMER_ID`, `PROFESSIONAL_ID`, `OTHER_IDENTIFIER`
 - Contact and place: `ADDRESS`, `EMAIL`, `PHONE_NUMBER`, `POSTAL_CODE`,
   `BIRTH_PLACE`, `VEHICLE_PLATE`
-- Financial: `IBAN`, `BANK_ACCOUNT`, `CREDIT_CARD`, `FINANCIAL_IDENTIFIER`,
-  `SALARY_INFORMATION`
+- Financial: `IBAN`, `BANK_ACCOUNT`, `CREDIT_CARD`, `FINANCIAL_IDENTIFIER`
 - Case and court: `COURT_NAME`, `CASE_NUMBER`, `FILE_NUMBER`,
   `DECISION_NUMBER`
 - Other recorded types: `DATE`, `DATE_OF_BIRTH`, `LOCATION`, `COMPANY_NAME`,
@@ -39,7 +42,7 @@ Masked types, using the names in `EntityType`:
 `POLITICAL_INFORMATION` is still a value in `EntityType`, but it is not in
 this list. Do not label it. The scan drops it before a finding is shown:
 `drop_retired_detections` in `apps/api/app/detectors/registry.py` removes
-`POLITICAL_INFORMATION`, `SALARY_INFORMATION`, and `MONEY_AMOUNT`. The name
+`POLITICAL_INFORMATION` and `MONEY_AMOUNT`. The name
 "retired" comes from that constant, `RETIRED_DETECTION_TYPES`. The changelog
 also says the political-opinion category was removed because it depended on
 a language-model review that DeID no longer runs. The enum value, the tag
@@ -48,11 +51,10 @@ finding of that type could still be masked if one were added by hand. The
 scan itself does not produce it, so political opinion is not masked.
 Removing the enum value is a separate code change. It is not done here.
 
-`SALARY_INFORMATION` stays on the mask list. The same detector filter
-currently discards it, so salary gold spans are expected misses until that
-filter changes. `DATE`, `LOCATION`, `SYSTEM_URL`, `PORT_NUMBER`, and
-`MONEY_AMOUNT` may be labeled. Their default recommendation is to leave the
-text visible unless a reviewer chooses otherwise.
+There is no salary type. Do not label a pay amount. `DATE`, `LOCATION`,
+`SYSTEM_URL`, `PORT_NUMBER`, and `MONEY_AMOUNT` may be labeled. Their
+default recommendation is to leave the text visible unless a reviewer
+chooses otherwise.
 
 ## What is labeled
 
@@ -75,7 +77,8 @@ organisation that is a party, an employer, or the sender of a letter.
   `OTHER_IDENTIFIER`.
 - Prices, tax rates, and invoice totals that are not a person's pay.
 - Religion, ethnicity, trade-union membership, political opinion, health
-  details, and criminal history. They are outside the scope list above.
+  details, criminal history, and salary amounts. They are outside the scope
+  list above.
 - A role title with no name: `Dr.`, `Av.`, `the claimant`, `savcı`.
 
 A negative document contains none of the labeled categories. It may contain
@@ -299,13 +302,12 @@ Correct: a stated SWIFT or customer-bank reference that is not one of those
 three.
 Incorrect: an IBAN.
 
-### SALARY_INFORMATION
+### Salary
 
-A named person's pay. The schema contains this type. Current detectors drop
-it, so a gold span remains a false negative until detection policy changes.
+Not in the scope list. Do not label a pay amount, including in a payroll
+document or an employment contract. The amounts stay in the text.
 
-Correct: `Brüt maaş: 25.000 TL` → `25.000 TL` for a named employee.
-Incorrect: `Toplam tutar: 15.750 TL` on an invoice, or `KDV oranı %20`.
+There is no salary entity type. Do not use `MONEY_AMOUNT` for pay.
 
 ### POLITICAL_INFORMATION
 
@@ -486,7 +488,7 @@ generic service port in a manual (`port 443`) is not labeled.
 
 ### MONEY_AMOUNT
 
-Do not use this for pay (`SALARY_INFORMATION`) or for an ordinary price.
+Do not use this for pay or for an ordinary price.
 The detectors retire this type. Leave ordinary amounts unlabeled.
 
 ### SYSTEM_URL

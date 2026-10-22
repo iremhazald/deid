@@ -4,6 +4,19 @@ All notable changes and improvements to the DeID LegalTech platform.
 
 ## [Unreleased]
 
+- The Turkish gold relabel moved the legacy-harness precision from 80.85% to
+  88.30% and recall from 62.81% to 68.03% (121 gold spans to 122). Detectors,
+  rules, and thresholds did not change. The same sentence belongs in
+  `evaluation/DATASET_CARD.md` when that card is written.
+- Salary left the evaluation scope. The three `SALARY_INFORMATION` labels in
+  `tr-salary-001` were removed and the amounts stayed in the text. Legacy-harness
+  recall moved from 68.03% to 69.75%. Precision stayed 88.30% (true positives
+  83, false positives 11, false negatives 39 to 36). That move is a scope
+  change, not a system improvement.
+- Salary is no longer a detected or masked type. It left `EntityType`, the tag
+  catalog, the placeholder prefixes, the review labels, and the
+  re-identification quasi-identifier set. The legacy-harness metrics did not
+  move on that code change.
 - DeID V2 Phase 3 (not released): UYAP UDF files can be uploaded and are reviewed
   as extracted text in the existing text workspace. DeID does not reproduce the
   original UYAP layout and does not preserve or reissue the electronic
