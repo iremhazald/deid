@@ -9,7 +9,8 @@ from app.domain.models import EntityCandidate, EntityType, TransformationStrateg
 
 # Quasi-identifier categories that can combine for re-identification
 QUASI_IDENTIFIERS = {
-    EntityType.DATE,  # Date of birth
+    EntityType.DATE,  # Calendar date
+    EntityType.DATE_OF_BIRTH,
     EntityType.POSTAL_CODE,
     EntityType.ADDRESS,
     EntityType.LOCATION,
