@@ -620,7 +620,7 @@ function renderPreview({
       const take = Math.min(value.length - cursor, pageEnd - absolute);
       if (take <= 0) break;
       const slice = value.slice(cursor, cursor + take);
-      const mark = !labeled && Boolean(entityId);
+      const mark: boolean = !labeled && Boolean(entityId);
       labeled = labeled || mark;
       buckets[page].push(
         <button
