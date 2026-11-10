@@ -193,6 +193,7 @@ def align_pdf_page_layout(page: Any, page_text: str) -> dict[str, Any] | None:
 class DocxText:
     text: str
     warnings: tuple[str, ...]
+    running_header_spans: tuple[tuple[int, int], ...] = ()
 
 
 def extract_docx(path: Path) -> str:
@@ -215,15 +216,14 @@ def extract_docx_text(path: Path, *, max_chars: int | None = None) -> DocxText:
     flags: set[str] = set()
     if _package_has_unsupported_parts(path):
         flags.add("unsupported")
-    blocks = _blocks(document.element.body, flags)
+    body = _pieces(document.element.body, flags)
     headers, footers = _section_notes(document, flags)
-    parts = ["\n".join(piece) for piece in (blocks, headers, footers) if piece]
-    text = "\n".join(parts)
+    text, header_spans = _join_document(body, headers, footers)
     limit = max_chars if max_chars is not None else get_settings().redaction_max_extracted_chars
     if len(text) > limit:
         raise UploadRejected(413, "DOCX_LIMIT_EXCEEDED")
     warnings = ("DOCX_UNSUPPORTED_CONTENT",) if "unsupported" in flags else ()
-    return DocxText(text, warnings)
+    return DocxText(text, warnings, header_spans)
 
 
 def _package_has_unsupported_parts(path: Path) -> bool:
@@ -257,27 +257,82 @@ def _story_blocks(part: Any, flags: set[str]) -> list[str]:
 
 
 def _blocks(parent: Any, flags: set[str]) -> list[str]:
-    blocks: list[str] = []
+    return [text for text, _size in _pieces(parent, flags)]
+
+
+def _pieces(parent: Any, flags: set[str]) -> list[tuple[str, float | None]]:
+    pieces: list[tuple[str, float | None]] = []
     for child in parent:
         if child.tag == _w("p"):
             text = _paragraph_text(child, flags)
             if _is_list_paragraph(child) and text and not text.startswith(("- ", "• ")):
                 text = f"- {text}"
             if text:
-                blocks.append(text)
+                pieces.append((text, _paragraph_font_size(child)))
         elif child.tag == _w("tbl"):
             lines = _table_lines(child, flags)
             if any(line.strip() for line in lines):
-                blocks.append("\n".join(lines))
+                pieces.append(("\n".join(lines), None))
         elif child.tag == _w("sdt"):
             content = child.find(_w("sdtContent"))
             if content is not None:
-                blocks.extend(_blocks(content, flags))
+                pieces.extend(_pieces(content, flags))
         elif child.tag in _SKIP_TAGS:
             flags.add("unsupported")
         elif any(node.tag in _SKIP_TAGS or node.tag in _NOTICE_TAGS for node in child.iter()):
             flags.add("unsupported")
-    return blocks
+    return pieces
+
+
+def _paragraph_font_size(paragraph: Any) -> float | None:
+    sizes: list[float] = []
+    for run in paragraph.iter(_w("r")):
+        properties = run.find(_w("rPr"))
+        if properties is None:
+            continue
+        size = properties.find(_w("sz"))
+        raw = size.get(_w("val")) if size is not None else None
+        if not raw:
+            continue
+        try:
+            points = int(raw) / 2
+        except ValueError:
+            continue
+        if 1 <= points <= 96:
+            sizes.append(points)
+    return max(sizes) if sizes else None
+
+
+def _join_document(
+    body: list[tuple[str, float | None]],
+    headers: list[str],
+    footers: list[str],
+) -> tuple[str, tuple[tuple[int, int], ...]]:
+    from app.detectors.legal.court import is_footnote_font
+
+    measured = [size for text, size in body if size is not None and len(text) >= 20]
+    body_size = sorted(measured)[len(measured) // 2] if measured else 12.0
+    groups: list[tuple[str, bool]] = [
+        (text, size is not None and is_footnote_font(size, body_size))
+        for text, size in body
+    ]
+    if headers:
+        groups.append(("\n".join(headers), True))
+    if footers:
+        groups.append(("\n".join(footers), True))
+    parts: list[str] = []
+    spans: list[tuple[int, int]] = []
+    cursor = 0
+    for index, (text, header) in enumerate(groups):
+        if index:
+            parts.append("\n")
+            cursor += 1
+        start = cursor
+        parts.append(text)
+        cursor += len(text)
+        if header:
+            spans.append((start, cursor))
+    return "".join(parts), tuple(spans)
 
 
 def _is_list_paragraph(paragraph: Any) -> bool:

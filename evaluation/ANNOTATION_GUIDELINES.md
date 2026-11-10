@@ -26,8 +26,11 @@ person.
 Masked types, using the names in `EntityType`:
 
 - Names: `PERSON_NAME`, `FIRST_NAME`, `LAST_NAME`, `ALIAS`, `CLAIMANT_NAME`,
-  `DEFENDANT_NAME`, `LAWYER_NAME`, `JUDGE_NAME`, `WITNESS_NAME`,
-  `EXPERT_NAME`
+  `DEFENDANT_NAME`, `LAWYER_NAME`, `JUDGE_NAME`, `PROSECUTOR_NAME`,
+  `COURT_CLERK_NAME`, `VICTIM_NAME`, `COMPLAINANT_NAME`, `SUSPECT_NAME`,
+  `ACCUSED_NAME`, `INTERVENOR_NAME`, `LEGAL_REPRESENTATIVE_NAME`,
+  `MEDIATOR_NAME`, `INTERPRETER_NAME`, `ENFORCEMENT_OFFICER_NAME`,
+  `NOTARY_NAME`, `ARBITRATOR_NAME`, `WITNESS_NAME`, `EXPERT_NAME`
 - Identifiers: `NATIONAL_ID`, `PASSPORT_NUMBER`, `TAX_IDENTIFIER`,
   `EMPLOYEE_ID`, `CUSTOMER_ID`, `PROFESSIONAL_ID`, `OTHER_IDENTIFIER`
 - Contact and place: `ADDRESS`, `EMAIL`, `PHONE_NUMBER`, `POSTAL_CODE`,
@@ -121,13 +124,26 @@ role, use `PERSON_NAME`.
 | Role words | Type |
 |---|---|
 | Davacı, alacaklı | `CLAIMANT_NAME` |
-| Davalı, borçlu, sanık | `DEFENDANT_NAME` |
+| Davalı, borçlu | `DEFENDANT_NAME` |
+| Sanık, suça sürüklenen çocuk, SSÇ when the clause is a criminal proceeding | `ACCUSED_NAME` |
+| Şüpheli | `SUSPECT_NAME` |
+| Müşteki, şikâyetçi | `COMPLAINANT_NAME` |
+| Mağdur | `VICTIM_NAME` |
+| Katılan, müdahil | `INTERVENOR_NAME` |
+| Kanuni temsilci, yasal temsilci, vasi, and veli or kayyım when the person is the appointed representative | `LEGAL_REPRESENTATIVE_NAME` |
+| Arabulucu | `MEDIATOR_NAME` |
+| Tercüman, and çevirmen in a procedural role | `INTERPRETER_NAME` |
+| İcra müdürü, icra müdür yardımcısı, icra görevlisi, icra memuru | `ENFORCEMENT_OFFICER_NAME` |
+| Noter, when the span is the natural person | `NOTARY_NAME` |
+| Hakem, tek hakem, hakem heyeti başkanı, hakem kurulu üyesi | `ARBITRATOR_NAME` |
 | Av., avukat, müdafi, and vekil when the clause shows a lawyer acting in proceedings | `LAWYER_NAME` |
 | Vekil appointed in a vekâletname | `PERSON_NAME` |
 | Hâkim, yargıç | `JUDGE_NAME` |
+| Savcı, cumhuriyet savcısı | `PROSECUTOR_NAME` |
+| Zabıt kâtibi, mahkeme kâtibi | `COURT_CLERK_NAME` |
 | Tanık | `WITNESS_NAME` |
 | Bilirkişi | `EXPERT_NAME` |
-| Şikayetçi, mağdur, dilekçe sahibi, savcı, zabıt kâtibi | `PERSON_NAME` |
+| Dilekçe sahibi | `PERSON_NAME` |
 
 A vekil named in a vekâletname is the appointed agent, not a lawyer, even
 when a lawyer could have been appointed. A vekil who appears as counsel in
@@ -138,16 +154,26 @@ a hearing, a petition, or a judgment is `LAWYER_NAME`.
 | Role words | Type |
 |---|---|
 | Claimant, Plaintiff, Petitioner, and Applicant when the person is a party to legal proceedings | `CLAIMANT_NAME` |
-| Defendant, Accused, and Respondent when the person is a party to legal proceedings | `DEFENDANT_NAME` |
+| Defendant and Respondent when the person is a party to legal proceedings | `DEFENDANT_NAME` |
+| Accused, and Criminal Defendant when the criminal context is explicit | `ACCUSED_NAME` |
+| Suspect | `SUSPECT_NAME` |
+| Complainant, Reporting Party | `COMPLAINANT_NAME` |
+| Victim | `VICTIM_NAME` |
+| Intervenor, Intervening Party | `INTERVENOR_NAME` |
+| Legal Representative, Legal Guardian | `LEGAL_REPRESENTATIVE_NAME` |
+| Mediator | `MEDIATOR_NAME` |
+| Interpreter, Court Interpreter | `INTERPRETER_NAME` |
+| Enforcement Officer, and Bailiff only when the text shows an enforcement role | `ENFORCEMENT_OFFICER_NAME` |
+| Notary Public | `NOTARY_NAME` |
+| Arbitrator, Sole Arbitrator, Presiding Arbitrator | `ARBITRATOR_NAME` |
 | Solicitor, Counsel, Barrister, and Attorney when it means a legal professional | `LAWYER_NAME` |
 | Judge, Justice, Master, Magistrate | `JUDGE_NAME` |
 | Witness | `WITNESS_NAME` |
 | Expert | `EXPERT_NAME` |
 | Attorney-in-fact, and an attorney appointed under a power of attorney | `PERSON_NAME` |
-| Prosecutor, District Attorney, State's Attorney, Crown Prosecutor, and similar prosecutor titles | `PERSON_NAME` |
-| Complainant, Victim, Clerk | `PERSON_NAME` |
+| Prosecutor, District Attorney, State's Attorney, Crown Prosecutor, and similar prosecutor titles | `PROSECUTOR_NAME` |
+| Court Clerk, Clerk of Court | `COURT_CLERK_NAME` |
 | Appellant, Appellee | The first-instance role, when the text states it. Otherwise `PERSON_NAME` |
-| Arbitrator, Mediator | `PERSON_NAME` |
 | A job applicant, or a survey respondent | `PERSON_NAME` |
 
 `Master` and `Justice` count only when they are the judicial title.

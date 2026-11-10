@@ -7,13 +7,14 @@ import re
 from app.detectors.legal.common import make_candidate
 from app.detectors.legal.names import (
     BARE_NAME_TOKEN,
+    clip_name_beside_role,
     clipped_name_span,
     is_legal_role_label,
     is_non_person_surface,
     is_workplace_or_job_title,
     strip_possessive,
 )
-from app.detectors.legal.roles import PERSON_TRIGGERS, resolve_trigger
+from app.detectors.legal.roles import PERSON_TRIGGERS, officer_role_body, resolve_trigger
 from app.detectors.registry import PageText
 from app.detectors.textutil import fold_tr_identity
 from app.domain.models import EntityCandidate, EntityType
@@ -24,8 +25,14 @@ _ASCII_TR = str.maketrans(
 
 _TRIGGERS = sorted((item[0] for item in PERSON_TRIGGERS), key=len, reverse=True)
 _TRIGGER_BODY = "|".join(re.escape(item) for item in _TRIGGERS)
-_NAME_PIECE = rf"{BARE_NAME_TOKEN}(?:['’`´ʼ′][A-Za-zÇĞİÖŞÜçğıöşü]{{1,8}})?"
-_NAME_GAP = r"[\s\u00a0\u00ad\u2000-\u200d\u202f]{0,40}"
+# ve / hem / ile break a name. They must not glue the title before "tanık"
+# onto the role, or two people into one span.
+_NAME_PIECE = (
+    rf"(?!(?i:ve|hem|ile|veya)(?![\wÇĞİÖŞÜçğıöşü]))"
+    rf"{BARE_NAME_TOKEN}(?:['’`´ʼ′][A-Za-zÇĞİÖŞÜçğıöşü]{{1,8}})?"
+)
+# A name stays on one line. The role may still sit on the previous line.
+_NAME_GAP = r"[^\S\r\n\u2028\u2029]{0,40}"
 _NAME_CHUNK = rf"{_NAME_PIECE}(?:{_NAME_GAP}{_NAME_PIECE}){{1,3}}"
 _TITLED_NAME = rf"{_NAME_PIECE}(?:{_NAME_GAP}{_NAME_PIECE}){{0,3}}"
 _SHORT_TITLED_NAME = rf"{_NAME_PIECE}(?:{_NAME_GAP}{_NAME_PIECE}){{0,1}}"
@@ -33,6 +40,20 @@ _ROLE_THEN_NAME = re.compile(
     rf"(?<![\wÇĞİÖŞÜçğıöşü])(?i:(?P<role>{_TRIGGER_BODY}))(?![\wÇĞİÖŞÜçğıöşü])"
     rf"(?:\s*-\s*\(\s*\d+\s*\)\s*-)?"
     rf"\s*:?\s+(?P<name>{_NAME_CHUNK})"
+)
+# Prosecutor and clerk labels need explicit İ/I folding. The shared trigger
+# list still resolves the role; this pattern only finds the span.
+_OFFICER_BODY = officer_role_body()
+_OFFICER_THEN_NAME = re.compile(
+    rf"(?<![\wÇĞİÖŞÜçğıöşü])(?P<role>{_OFFICER_BODY})(?![\wÇĞİÖŞÜçğıöşü])"
+    rf"(?:\s*-\s*\(\s*\d+\s*\)\s*-)?"
+    rf"\s*:?\s+(?P<name>{_NAME_CHUNK})",
+    re.IGNORECASE,
+)
+_NAME_THEN_OFFICER = re.compile(
+    rf"(?<![\wÇĞİÖŞÜçğıöşü])(?P<name>{_NAME_CHUNK})\s+"
+    rf"(?P<role>{_OFFICER_BODY})(?![\wÇĞİÖŞÜçğıöşü])",
+    re.IGNORECASE,
 )
 # OCR often glues the period to the given name: "Av.İrem Hazal Deveci".
 _AV_THEN_NAME = re.compile(
@@ -92,11 +113,34 @@ def _titled_body_ok(name: str) -> bool:
     return not any(stem in folded for stem in _BLOCKED_TITLED_STEMS)
 
 
-def _emit(page: PageText, name_raw: str, name_start: int, role_raw: str) -> EntityCandidate | None:
-    clipped = clipped_name_span(name_raw, name_start)
+_ATTENDANCE = re.compile(r"(?i)toplant[ıi](?:ya|da|nda)|seminer(?:e|de|ine)")
+_SPORTS = re.compile(r"(?i)futbol|basketbol|voleybol|stadyum|d[üu]d[üu]k|\bmac[ıi]?\b|maç")
+
+
+def _emit(
+    page: PageText,
+    name_raw: str,
+    name_start: int,
+    role_raw: str,
+    *,
+    before_role: bool,
+) -> EntityCandidate | None:
+    folded_role = fold_tr_identity(role_raw)
+    left = page.text[max(0, name_start - 64) : name_start]
+    # "toplantıya katılan" is attendance, not the intervening-party role.
+    if folded_role in {"katilan", "katilanlar"} and _ATTENDANCE.search(left):
+        return None
+    # A sports referee is not an arbitrator. Colon labels use the party parser.
+    if (folded_role == "hakem" or folded_role.startswith("hakem ")) and _SPORTS.search(
+        page.text[max(0, name_start - 80) : name_start + 48]
+    ):
+        return None
+    clipped = clip_name_beside_role(name_raw, name_start, before_role=before_role)
     if clipped is None:
         return None
     name, start, end = clipped
+    if is_non_person_surface(name) or is_legal_role_label(name):
+        return None
     role, entity_type = resolve_trigger(role_raw)
     return make_candidate(
         page,
@@ -176,6 +220,9 @@ def parse_role_persons(page: PageText) -> list[EntityCandidate]:
             )
         )
     for match in _PROFESSIONAL_THEN_NAME.finditer(page.text):
+        before = fold_tr_identity(page.text[max(0, match.start() - 16) : match.start()])
+        if "arabulucu" in before:
+            continue
         take(
             _emit_titled(
                 page,
@@ -186,9 +233,23 @@ def parse_role_persons(page: PageText) -> list[EntityCandidate]:
                 span_start=match.start(),
             )
         )
-    for pattern in (_AV_THEN_NAME, _ROLE_THEN_NAME, _NAME_THEN_ROLE):
+    for pattern, before_role in (
+        (_AV_THEN_NAME, False),
+        (_OFFICER_THEN_NAME, False),
+        (_NAME_THEN_OFFICER, True),
+        (_ROLE_THEN_NAME, False),
+        (_NAME_THEN_ROLE, True),
+    ):
         for match in pattern.finditer(page.text):
-            take(_emit(page, match.group("name"), match.start("name"), match.group("role")))
+            take(
+                _emit(
+                    page,
+                    match.group("name"),
+                    match.start("name"),
+                    match.group("role"),
+                    before_role=before_role,
+                )
+            )
             cursor = match.end("name")
             for extra in _AND_NAME.finditer(page.text[cursor : cursor + 80]):
                 take(
@@ -197,6 +258,7 @@ def parse_role_persons(page: PageText) -> list[EntityCandidate]:
                         extra.group("name"),
                         cursor + extra.start("name"),
                         match.group("role"),
+                        before_role=False,
                     )
                 )
     return found

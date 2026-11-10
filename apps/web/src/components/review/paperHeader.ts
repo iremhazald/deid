@@ -16,22 +16,15 @@ function lineBounds(text: string, index: number): [number, number] {
   return [start, breakAt < 0 ? text.length : breakAt];
 }
 
-function isHeaderCourt(entity: Entity, text: string): boolean {
-  if (entity.attributes?.mask_scope === "header_line") return true;
-  if (entity.type !== "COURT_NAME") return false;
-  if (entity.start > 500 || entity.text.length > 160) return false;
-  const line = (text.slice(0, entity.start).match(/\n/g) ?? []).length;
-  if (line > 1) return false;
-  const [start, end] = lineBounds(text, entity.start);
-  if (end - start > 180) return false;
-  return /mahkemes/i.test(entity.text);
+function isHeaderCourt(entity: Entity): boolean {
+  return entity.attributes?.mask_scope === "header_line";
 }
 
 /** Lines of the top court/docket strip that the PDF paints as white paper. */
 export function paperHeaderRanges(text: string, entities: Entity[]): Array<[number, number]> {
   const ranges: Array<[number, number]> = [];
   for (const entity of entities) {
-    if (!isHeaderCourt(entity, text)) continue;
+    if (!isHeaderCourt(entity)) continue;
     if (entity.start < 0 || entity.start >= text.length || entity.end <= entity.start) continue;
     let [start] = lineBounds(text, entity.start);
     let end = lineBounds(text, Math.min(entity.end, text.length) - 1)[1];
@@ -93,7 +86,7 @@ export function applyPaperHeaderMasks(
   for (const [start, end] of ranges) {
     if (cursor < start) out.push(...sliceParts(parts, text, cursor, start));
     const header = entities.find(
-      (entity) => isHeaderCourt(entity, text) && entity.start >= start && entity.start < end,
+      (entity) => isHeaderCourt(entity) && entity.start >= start && entity.start < end,
     );
     out.push({
       text: text.slice(start, end),

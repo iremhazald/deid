@@ -20,6 +20,9 @@ from app.detectors.legal.court import court_ordinal, detect_court_letterheads, p
 from app.detectors.legal.repeats import DETECTOR_NAME as NAME_REPEAT_DETECTOR
 from app.detectors.legal.repeats import PAIR_DETECTOR_NAME
 from app.detectors.legal.repeats import pair_adjacent_person_name_tokens
+from app.detectors.legal.repeats import propagate_party_title_repeats
+from app.detectors.legal.repeats import accept_repeated_numbered_surfaces
+from app.detectors.legal.repeats import propagate_detected_surface_repeats
 from app.detectors.legal.repeats import propagate_person_name_repeats, variant_pattern
 from app.detectors.legal.identifier_repeats import (
     IBAN_REPEAT,
@@ -75,6 +78,8 @@ from app.transforms.planner import (
 from app.transforms.entity_merge import placeholder_tokens_for_operations
 from app.transforms.possible_matches import generate_possible_matches
 from app.transforms.tag_registry import (
+    apply_layout_reading_order,
+    apply_span_reading_order,
     bind_canonical_ids,
     stamp_placeholder_tokens,
     tag_locale_for_job,
@@ -179,14 +184,14 @@ def _extract_pdf_source(
         document.close()
 
 
-def _read_source_text(job: Job) -> tuple[str, list[str]]:
+def _read_source_text(job: Job) -> tuple[str, list[str], list[tuple[int, int]]]:
     if job.document_kind == DocumentKind.DOCX:
         extracted = extract_docx_text(job.source_path)
-        return extracted.text, ["DOCX_REBUILT_TEXT_ONLY", *extracted.warnings]
+        return extracted.text, ["DOCX_REBUILT_TEXT_ONLY", *extracted.warnings], list(extracted.running_header_spans)
     if job.document_kind == DocumentKind.UDF:
         extracted = extract_udf_text(job.source_path)
-        return extracted.text, ["UDF_TEXT_ONLY", *extracted.warnings]
-    return job.source_path.read_text(encoding="utf-8"), []
+        return extracted.text, list(extracted.warnings), list(extracted.running_header_spans)
+    return job.source_path.read_text(encoding="utf-8"), [], []
 
 
 def _hash_source(path: Path) -> str:
@@ -228,7 +233,7 @@ async def analyze_textual_document(
 ) -> AnalysisResponse:
     del ai_provider
     try:
-        text, warnings = await run_in_threadpool(_read_source_text, job)
+        text, warnings, header_spans = await run_in_threadpool(_read_source_text, job)
     except (OSError, UnicodeError, ValueError) as exc:
         code = str(exc) if str(exc).isupper() else "DOCUMENT_READ_FAILED"
         raise DocumentError(code) from exc
@@ -236,7 +241,7 @@ async def analyze_textual_document(
         raise DocumentError("EMPTY_DOCUMENT")
     pages = [PageText(page=0, text=text, document_offset=0)]
     return await _build_analysis(
-        job, pages, text, 1, profile, warnings, mode
+        job, pages, text, 1, profile, warnings, mode, running_header_spans=header_spans
     )
 
 
@@ -267,6 +272,7 @@ def _consolidate_candidates(
     unique = _drop_contained_in_uyap_footer(unique)
     if pages:
         unique = annotate_cited_authority_context(pages, unique)
+    unique = accept_repeated_numbered_surfaces(unique)
     resolved = assign_resolved_entities(unique)
     return len(unique), resolved, apply_policy(resolved, profile, locale=locale)
 
@@ -300,6 +306,7 @@ async def _build_analysis(
     warnings: list[str],
     mode: DetectionMode = DetectionMode.LOCAL_CONTEXT,
     page_layouts: list[dict] | None = None,
+    running_header_spans: list[tuple[int, int]] | None = None,
 ) -> AnalysisResponse:
     requested = getattr(job, "requested_document_language", None)
     if requested is None:
@@ -376,8 +383,10 @@ async def _build_analysis(
                 AnalysisStatus.PARTIAL if candidates else AnalysisStatus.FAILED
             )
 
+    from app.detectors.legal.court import promote_running_header_courts
     from app.detectors.legal.merge import merge_rule_candidates
 
+    candidates = promote_running_header_courts(candidates, running_header_spans or [])
     candidates = merge_rule_candidates(candidates)
     paired = await run_in_threadpool(pair_adjacent_person_name_tokens, pages, candidates)
     if paired:
@@ -389,6 +398,16 @@ async def _build_analysis(
         candidates.extend(repeats)
         if NAME_REPEAT_DETECTOR not in detectors:
             detectors.append(NAME_REPEAT_DETECTOR)
+    titles = await run_in_threadpool(propagate_party_title_repeats, pages, candidates)
+    if titles:
+        candidates.extend(titles)
+        if "TR_PARTY_TITLE_REPEAT" not in detectors:
+            detectors.append("TR_PARTY_TITLE_REPEAT")
+    surfaces = await run_in_threadpool(propagate_detected_surface_repeats, pages, candidates)
+    if surfaces:
+        candidates.extend(surfaces)
+        if "TR_SURFACE_REPEAT" not in detectors:
+            detectors.append("TR_SURFACE_REPEAT")
     identifiers = await run_in_threadpool(propagate_identifier_repeats, pages, candidates)
     if identifiers:
         candidates.extend(identifiers)
@@ -402,6 +421,7 @@ async def _build_analysis(
     del after_dedup, resolved
     if job.custom_terms:
         entities = _apply_term_strategies(entities, job.custom_terms)
+    entities = apply_layout_reading_order(entities, pages, page_layouts)
     entities = stamp_placeholder_tokens(
         entities, resolved_language, state=job.resolution_state
     )
@@ -451,8 +471,22 @@ async def _build_analysis(
         except (ValueError, TypeError, RuntimeError, OSError):
             page_spans = []
             warnings.append("SPAN_MAPPING_FAILED")
-        analysis.page_spans = page_spans
-        analysis.warnings = warnings
+        anchored = apply_span_reading_order(entities, page_spans)
+        anchored = stamp_placeholder_tokens(
+            anchored, resolved_language, state=job.resolution_state
+        )
+        analysis = analysis.model_copy(
+            update={
+                "entities": anchored,
+                "possible_matches": generate_possible_matches(
+                    anchored, text, job.resolution_state
+                ),
+                "page_spans": page_spans,
+                "warnings": warnings,
+                "resolution_state": job.resolution_state,
+            }
+        )
+        job.analysis = analysis
         job.page_spans = page_spans
     return analysis
 

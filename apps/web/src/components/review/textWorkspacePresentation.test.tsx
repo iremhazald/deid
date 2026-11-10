@@ -36,7 +36,6 @@ const labels: Record<string, string> = {
   warning: 'Uyarı',
   'messages.OCR_USED': 'Bu belgede tarama var.',
   'messages.DOCX_UNSUPPORTED_CONTENT': 'Desteklenmeyen içerik var.',
-  'messages.UDF_TEXT_ONLY': 'UDF metin olarak açıldı.',
 }
 
 function t(key: string) {
@@ -331,7 +330,7 @@ describe('Text Workspace chrome', () => {
         file_name: 'dilekce.udf',
         document_kind: 'DOCX',
         source_document_type: 'UDF',
-        warnings: ['UDF_TEXT_ONLY'],
+        warnings: ['OCR_USED'],
       },
     ]
     for (const item of cases) {

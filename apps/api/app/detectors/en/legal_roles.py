@@ -39,26 +39,34 @@ from app.detectors.en.vocab import (
 from app.detectors.registry import PageText
 from app.domain.models import EntityCandidate, EntityType
 
+def _entity_for_role(role: str) -> EntityType:
+    return {
+        "JUDGE": EntityType.JUDGE_NAME,
+        "PROSECUTOR": EntityType.PROSECUTOR_NAME,
+        "CLERK": EntityType.COURT_CLERK_NAME,
+        "ARBITRATOR": EntityType.ARBITRATOR_NAME,
+        "MEDIATOR": EntityType.MEDIATOR_NAME,
+        "EXPERT": EntityType.EXPERT_NAME,
+        "INTERPRETER": EntityType.INTERPRETER_NAME,
+        "VICTIM": EntityType.VICTIM_NAME,
+        "COMPLAINANT": EntityType.COMPLAINANT_NAME,
+        "COMPLAINANT_ACCUSED": EntityType.COMPLAINANT_ACCUSED_NAME,
+        "SUSPECT": EntityType.SUSPECT_NAME,
+        "ACCUSED": EntityType.ACCUSED_NAME,
+        "INTERVENOR": EntityType.INTERVENOR_NAME,
+        "LEGAL_REPRESENTATIVE": EntityType.LEGAL_REPRESENTATIVE_NAME,
+        "NOTARY": EntityType.NOTARY_NAME,
+        "ENFORCEMENT_OFFICER": EntityType.ENFORCEMENT_OFFICER_NAME,
+        "COUNSEL": EntityType.LAWYER_NAME,
+    }.get(role, EntityType.PERSON_NAME)
+
+
 _ROLE_MAP: tuple[tuple[str, str, EntityType], ...] = tuple(
-    [(label, role, EntityType.PERSON_NAME) for label, role in PARTY_ROLES]
-    + [(label, role, EntityType.PERSON_NAME) for label, role in ordinal_party_role_labels()]
-    + [(label, role, EntityType.LAWYER_NAME) for label, role in COUNSEL_ROLES]
-    + [
-        (
-            label,
-            role,
-            EntityType.JUDGE_NAME if role == "JUDGE" else EntityType.PERSON_NAME,
-        )
-        for label, role in DECISION_ROLES
-    ]
-    + [
-        (
-            label,
-            role,
-            EntityType.EXPERT_NAME if role == "EXPERT" else EntityType.PERSON_NAME,
-        )
-        for label, role in EXPERT_ROLES
-    ]
+    [(label, role, _entity_for_role(role)) for label, role in PARTY_ROLES]
+    + [(label, role, _entity_for_role(role)) for label, role in ordinal_party_role_labels()]
+    + [(label, role, _entity_for_role(role)) for label, role in COUNSEL_ROLES]
+    + [(label, role, _entity_for_role(role)) for label, role in DECISION_ROLES]
+    + [(label, role, _entity_for_role(role)) for label, role in EXPERT_ROLES]
 )
 _ROLE_LABELS = sorted((item[0] for item in _ROLE_MAP), key=len, reverse=True)
 _ROLE_BODY = "|".join(re.escape(item) for item in _ROLE_LABELS)

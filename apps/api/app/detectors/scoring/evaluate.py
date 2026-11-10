@@ -6,6 +6,7 @@ import re
 
 from app.detectors.legal.names import (
     collapse_name,
+    is_bare_uyap_word,
     is_isolated_letter_person_surface,
     is_isolated_uppercase_fragment,
     is_non_person_surface,
@@ -125,6 +126,20 @@ _PERSON_TYPES = {
     EntityType.LAST_NAME,
     EntityType.ALIAS,
     EntityType.JUDGE_NAME,
+    EntityType.PROSECUTOR_NAME,
+    EntityType.COURT_CLERK_NAME,
+    EntityType.VICTIM_NAME,
+    EntityType.COMPLAINANT_NAME,
+    EntityType.SUSPECT_NAME,
+    EntityType.ACCUSED_NAME,
+    EntityType.COMPLAINANT_ACCUSED_NAME,
+    EntityType.INTERVENOR_NAME,
+    EntityType.LEGAL_REPRESENTATIVE_NAME,
+    EntityType.MEDIATOR_NAME,
+    EntityType.INTERPRETER_NAME,
+    EntityType.ENFORCEMENT_OFFICER_NAME,
+    EntityType.NOTARY_NAME,
+    EntityType.ARBITRATOR_NAME,
     EntityType.LAWYER_NAME,
     EntityType.CLAIMANT_NAME,
     EntityType.DEFENDANT_NAME,
@@ -419,7 +434,40 @@ def _score_person(scored: ScoredCandidate, index: DocumentIndex) -> None:
         scored.evidence.append(_ev("surname_like", 1, EvidenceSource.STRUCTURE))
     if entity.type == EntityType.LAWYER_NAME or entity.role in {"COUNSEL", "DEFENSE_COUNSEL", "LAWYER"}:
         scored.evidence.append(_ev("lawyer_title_or_role", 7, EvidenceSource.CONTEXT))
-    if entity.type == EntityType.JUDGE_NAME or entity.role in {"JUDGE", "PRESIDENT"}:
+    if entity.type in {
+        EntityType.JUDGE_NAME,
+        EntityType.PROSECUTOR_NAME,
+        EntityType.COURT_CLERK_NAME,
+        EntityType.VICTIM_NAME,
+        EntityType.COMPLAINANT_NAME,
+        EntityType.SUSPECT_NAME,
+        EntityType.ACCUSED_NAME,
+        EntityType.COMPLAINANT_ACCUSED_NAME,
+        EntityType.INTERVENOR_NAME,
+        EntityType.LEGAL_REPRESENTATIVE_NAME,
+        EntityType.MEDIATOR_NAME,
+        EntityType.INTERPRETER_NAME,
+        EntityType.ENFORCEMENT_OFFICER_NAME,
+        EntityType.NOTARY_NAME,
+        EntityType.ARBITRATOR_NAME,
+    } or entity.role in {
+        "JUDGE",
+        "PRESIDENT",
+        "PROSECUTOR",
+        "CLERK",
+        "VICTIM",
+        "COMPLAINANT",
+        "SUSPECT",
+        "ACCUSED",
+        "COMPLAINANT_ACCUSED",
+        "INTERVENOR",
+        "LEGAL_REPRESENTATIVE",
+        "MEDIATOR",
+        "INTERPRETER",
+        "ENFORCEMENT_OFFICER",
+        "NOTARY",
+        "ARBITRATOR",
+    }:
         scored.evidence.append(_ev("roster_or_judge_role", 7, EvidenceSource.CONTEXT))
     if entity.detector in {
         "TR_LEGAL_PARTY",
@@ -501,7 +549,20 @@ def _score_address(scored: ScoredCandidate, index: DocumentIndex) -> None:
 
 
 def _score_org(scored: ScoredCandidate, index: DocumentIndex) -> None:
+    # Imported lazily: organisation pulls the detector registry, which pulls scoring.
+    from app.detectors.legal.organisation import is_generic_bar_surface
+
     text = scored.entity.text
+    if is_generic_bar_surface(text):
+        scored.negative_evidence.append(
+            _ev("generic_bar_association", -8, EvidenceSource.NEGATIVE, hard_reject=True)
+        )
+        return
+    if is_bare_uyap_word(text):
+        scored.negative_evidence.append(
+            _ev("bare_uyap_word", -8, EvidenceSource.NEGATIVE, hard_reject=True)
+        )
+        return
     if re.search(
         r"(?i)(?:a\.?\s*ş\.?|ltd\.?|limited|llc|llp|inc(?:orporated)?|corp(?:oration)?|p\.?l\.?c\.?)",
         text,

@@ -137,11 +137,7 @@ export function seedDecisions(
   preset: PurposePreset = 'ANONYMIZED',
 ): Decisions {
   return Object.fromEntries(
-    entities.map((entity) => {
-      if (preset === 'DETECT_ONLY') return [entity.id, 'KEEP']
-      if (isReviewRecommended(entity)) return [entity.id, 'KEEP']
-      return [entity.id, entity.recommended ? 'REDACT' : 'KEEP']
-    }),
+    entities.map((entity) => [entity.id, decisionBaseline(entity, preset, entities)]),
   )
 }
 
@@ -192,7 +188,7 @@ export function seedEntityStrategies(
   if (preset === 'DETECT_ONLY') return next
   if (textWorkspaceLabels(options) && preset === 'ANONYMIZED') return next
   for (const entity of entities) {
-    if (isReviewRecommended(entity)) {
+    if (isReviewRecommended(entity) && !sameAcceptedSurface(entity, entities)) {
       const recommended = catalogStrategyFor(entity.type, catalog, entity)
       next[entity.id] = recommended === 'REDACT' ? 'KEEP' : recommended
       continue
@@ -211,8 +207,25 @@ export function seedEntityStrategies(
  * When profile recommendations change, reseed only entities the user has not
  * manually overridden relative to the previous recommendation baseline.
  */
-function decisionBaseline(entity: Entity, preset: PurposePreset = 'ANONYMIZED'): 'REDACT' | 'KEEP' {
-  if (preset === 'DETECT_ONLY' || isReviewRecommended(entity)) return 'KEEP'
+function sameAcceptedSurface(entity: Entity, entities: Entity[]): boolean {
+  const surface = entity.text.trim().toLocaleLowerCase('tr-TR')
+  if (!surface) return false
+  return entities.some((other) =>
+    other.id !== entity.id
+    && other.type === entity.type
+    && !other.needs_review
+    && other.recommended !== false
+    && other.text.trim().toLocaleLowerCase('tr-TR') === surface,
+  )
+}
+
+function decisionBaseline(
+  entity: Entity,
+  preset: PurposePreset = 'ANONYMIZED',
+  entities: Entity[] = [],
+): 'REDACT' | 'KEEP' {
+  if (preset === 'DETECT_ONLY') return 'KEEP'
+  if (isReviewRecommended(entity) && !sameAcceptedSurface(entity, entities)) return 'KEEP'
   return entity.recommended ? 'REDACT' : 'KEEP'
 }
 
@@ -228,10 +241,12 @@ export function mergeProfileDecisions(
   for (const entity of entities) {
     const prior = previousById.get(entity.id)
     const priorDecision = previous[entity.id]
-    const priorDefault = prior ? decisionBaseline(prior, preset) : decisionBaseline(entity, preset)
+    const priorDefault = prior
+      ? decisionBaseline(prior, preset, entities)
+      : decisionBaseline(entity, preset, entities)
     const untouched = !priorDecision || priorDecision === priorDefault
     if (untouched || !priorDecision) {
-      next[entity.id] = decisionBaseline(entity, preset)
+      next[entity.id] = decisionBaseline(entity, preset, entities)
     }
   }
 
@@ -711,6 +726,20 @@ const PLACEHOLDER_TR: Record<string, string> = {
   ALIAS: 'KİŞİ',
   LAWYER_NAME: 'AVUKAT',
   JUDGE_NAME: 'HÂKİM',
+  PROSECUTOR_NAME: 'SAVCI',
+  COURT_CLERK_NAME: 'KATİP',
+  VICTIM_NAME: 'MAGDUR',
+  COMPLAINANT_NAME: 'MÜŞTEKİ',
+  SUSPECT_NAME: 'SUPHELI',
+  ACCUSED_NAME: 'SANIK',
+  COMPLAINANT_ACCUSED_NAME: 'MÜŞTEKİ_SANIK',
+  INTERVENOR_NAME: 'KATILAN',
+  LEGAL_REPRESENTATIVE_NAME: 'KANUNI_TEMSILCI',
+  MEDIATOR_NAME: 'ARABULUCU',
+  INTERPRETER_NAME: 'TERCUMAN',
+  ENFORCEMENT_OFFICER_NAME: 'ICRA_MEMURU',
+  NOTARY_NAME: 'NOTER',
+  ARBITRATOR_NAME: 'HAKEM',
   CLAIMANT_NAME: 'DAVACI',
   DEFENDANT_NAME: 'DAVALI',
   WITNESS_NAME: 'TANIK',
@@ -759,6 +788,20 @@ const PLACEHOLDER_EN: Record<string, string> = {
   ALIAS: 'PERSON',
   LAWYER_NAME: 'LAWYER',
   JUDGE_NAME: 'JUDGE',
+  PROSECUTOR_NAME: 'PROSECUTOR',
+  COURT_CLERK_NAME: 'COURT_CLERK',
+  VICTIM_NAME: 'VICTIM',
+  COMPLAINANT_NAME: 'COMPLAINANT',
+  SUSPECT_NAME: 'SUSPECT',
+  ACCUSED_NAME: 'ACCUSED',
+  COMPLAINANT_ACCUSED_NAME: 'COMPLAINANT_ACCUSED',
+  INTERVENOR_NAME: 'INTERVENOR',
+  LEGAL_REPRESENTATIVE_NAME: 'LEGAL_REPRESENTATIVE',
+  MEDIATOR_NAME: 'MEDIATOR',
+  INTERPRETER_NAME: 'INTERPRETER',
+  ENFORCEMENT_OFFICER_NAME: 'ENFORCEMENT_OFFICER',
+  NOTARY_NAME: 'NOTARY',
+  ARBITRATOR_NAME: 'ARBITRATOR',
   CLAIMANT_NAME: 'CLAIMANT',
   DEFENDANT_NAME: 'DEFENDANT',
   WITNESS_NAME: 'WITNESS',
@@ -819,6 +862,20 @@ const PERSON_TAG_TYPES = new Set([
   'DEFENDANT_NAME',
   'LAWYER_NAME',
   'JUDGE_NAME',
+  'PROSECUTOR_NAME',
+  'COURT_CLERK_NAME',
+  'VICTIM_NAME',
+  'COMPLAINANT_NAME',
+  'SUSPECT_NAME',
+  'ACCUSED_NAME',
+  'COMPLAINANT_ACCUSED_NAME',
+  'INTERVENOR_NAME',
+  'LEGAL_REPRESENTATIVE_NAME',
+  'MEDIATOR_NAME',
+  'INTERPRETER_NAME',
+  'ENFORCEMENT_OFFICER_NAME',
+  'NOTARY_NAME',
+  'ARBITRATOR_NAME',
   'WITNESS_NAME',
   'EXPERT_NAME',
 ])
@@ -828,6 +885,20 @@ const ROLE_TAG_TYPES = new Set([
   'DEFENDANT_NAME',
   'LAWYER_NAME',
   'JUDGE_NAME',
+  'PROSECUTOR_NAME',
+  'COURT_CLERK_NAME',
+  'VICTIM_NAME',
+  'COMPLAINANT_NAME',
+  'SUSPECT_NAME',
+  'ACCUSED_NAME',
+  'COMPLAINANT_ACCUSED_NAME',
+  'INTERVENOR_NAME',
+  'LEGAL_REPRESENTATIVE_NAME',
+  'MEDIATOR_NAME',
+  'INTERPRETER_NAME',
+  'ENFORCEMENT_OFFICER_NAME',
+  'NOTARY_NAME',
+  'ARBITRATOR_NAME',
   'WITNESS_NAME',
   'EXPERT_NAME',
 ])
@@ -841,6 +912,20 @@ const TYPE_TAG_FAMILY: Record<string, string> = {
   DEFENDANT_NAME: 'DEFENDANT',
   LAWYER_NAME: 'LAWYER',
   JUDGE_NAME: 'JUDGE',
+  PROSECUTOR_NAME: 'PROSECUTOR',
+  COURT_CLERK_NAME: 'COURT_CLERK',
+  VICTIM_NAME: 'VICTIM',
+  COMPLAINANT_NAME: 'COMPLAINANT',
+  SUSPECT_NAME: 'SUSPECT',
+  ACCUSED_NAME: 'ACCUSED',
+  COMPLAINANT_ACCUSED_NAME: 'COMPLAINANT_ACCUSED',
+  INTERVENOR_NAME: 'INTERVENOR',
+  LEGAL_REPRESENTATIVE_NAME: 'LEGAL_REPRESENTATIVE',
+  MEDIATOR_NAME: 'MEDIATOR',
+  INTERPRETER_NAME: 'INTERPRETER',
+  ENFORCEMENT_OFFICER_NAME: 'ENFORCEMENT_OFFICER',
+  NOTARY_NAME: 'NOTARY',
+  ARBITRATOR_NAME: 'ARBITRATOR',
   WITNESS_NAME: 'WITNESS',
   EXPERT_NAME: 'EXPERT',
 }
@@ -887,57 +972,146 @@ function placeholderFamily(entity: Entity, entities: Entity[]): string {
     ),
   ]
   if (roles.length === 1) return roles[0]
+  const dual = new Set(['COMPLAINANT', 'ACCUSED', 'COMPLAINANT_ACCUSED'])
+  if (roles.length > 1 && roles.every((role) => dual.has(role))) return 'COMPLAINANT_ACCUSED'
   return 'PERSON'
 }
 
-function byDocumentOrder(left: Entity, right: Entity): number {
-  return left.page - right.page || left.start - right.start || left.id.localeCompare(right.id)
+function readingRank(entity: Entity): [number, number, number, number, string] {
+  const attributes = entity.attributes ?? {}
+  const page = typeof attributes.reading_page === 'number' ? attributes.reading_page : entity.page
+  const y = attributes.reading_y
+  const x = attributes.reading_x
+  if (typeof y === 'number' && typeof x === 'number') {
+    return [page, Math.round(y / 3) * 3, x, entity.start, entity.id]
+  }
+  return [page, entity.start, 0, entity.start, entity.id]
 }
 
-/** Family-local numbers for distinct canonical keys. Prefers backend-stamped tokens. */
+function byDocumentOrder(left: Entity, right: Entity): number {
+  const leftRank = readingRank(left)
+  const rightRank = readingRank(right)
+  for (let index = 0; index < leftRank.length - 1; index += 1) {
+    const delta = Number(leftRank[index]) - Number(rightRank[index])
+    if (delta) return delta
+  }
+  return left.id.localeCompare(right.id)
+}
+
+/** Spans the text view draws. A name inside a longer span is not a visible tag. */
+function layoutPaintedIds(entities: Entity[]): Set<string> {
+  const painted = new Set<string>()
+  let cursor = -1
+  const sorted = [...entities].sort(
+    (left, right) => left.start - right.start || right.end - left.end || left.id.localeCompare(right.id),
+  )
+  for (const entity of sorted) {
+    if (entity.start < cursor) continue
+    painted.add(entity.id)
+    if (entity.end > cursor) cursor = entity.end
+  }
+  return painted
+}
+
+function tokenLabel(token: string): string {
+  return token.trim().replace(/^\[/, '').replace(/\]$/, '').replace(/_\d+$/, '')
+}
+
+function tokenHasNumber(token: string): boolean {
+  return /_\d+\]$/.test(token.trim())
+}
+
+/** A stored token from the previous category must not hide the current one. */
+function stampedTokenMatchesType(
+  token: string,
+  type: string,
+  language: string,
+  reclassified = false,
+): boolean {
+  if (type === 'COURT_NAME') return true
+  const label = tokenLabel(token)
+  const other = language.startsWith('tr') ? 'en' : 'tr'
+  const labelMatches =
+    label === placeholderLabel(type, language) || label === placeholderLabel(type, other)
+  if (labelMatches) {
+    // [SANIK] is not a sanık tag. Numbered categories always carry _1, _2, …
+    if (UNNUMBERED_PLACEHOLDER.has(type)) return true
+    return tokenHasNumber(token)
+  }
+  // A category the user just picked replaces the previous tag, including KİŞİ.
+  if (reclassified) return false
+  // Judge + prosecutor and the other role conflicts stay on the shared person tag.
+  return (label === 'KİŞİ' || label === 'PERSON') && PERSON_TAG_TYPES.has(type) && tokenHasNumber(token)
+}
+
+function tagLabelFor(entity: Entity, entities: Entity[], language: string): string {
+  const stamped = entity.placeholder_token?.trim()
+  const reclassified = entity.attributes?.reclassified === true
+  if (stamped && stampedTokenMatchesType(stamped, entity.type, language, reclassified)) {
+    return tokenLabel(stamped)
+  }
+  const family = placeholderFamily(entity, entities)
+  if (family === 'PERSON') return placeholderLabel('PERSON_NAME', language)
+  const familyType =
+    [...ROLE_TAG_TYPES].find((type) => TYPE_TAG_FAMILY[type] === family) ?? entity.type
+  return placeholderLabel(familyType, language)
+}
+
+/** Family-local numbers for the tags that are still on the page. */
 export function placeholderTokensByEntityId(
   entities: Entity[],
   language: string,
 ): Map<string, string> {
   const tokens = new Map<string, string>()
-  const firstByFamilyKey = new Map<string, Entity>()
-  for (const entity of [...entities].sort(byDocumentOrder)) {
-    if (entity.placeholder_token?.trim()) {
-      tokens.set(entity.id, entity.placeholder_token.trim())
-      continue
-    }
-    const family = placeholderFamily(entity, entities)
-    const identity = placeholderIdentityKey(entity)
-    const grouped = `${family}|${identity}`
-    if (!firstByFamilyKey.has(grouped)) firstByFamilyKey.set(grouped, entity)
-  }
-  const counters = new Map<string, number>()
-  const numbers = new Map<string, number>()
-  for (const [grouped] of [...firstByFamilyKey.entries()].sort(
-    (left, right) => byDocumentOrder(left[1], right[1]),
-  )) {
-    const family = grouped.slice(0, grouped.indexOf('|'))
-    const next = (counters.get(family) ?? 0) + 1
-    counters.set(family, next)
-    numbers.set(grouped, next)
-  }
+  const pending: Entity[] = []
   for (const entity of entities) {
-    if (tokens.has(entity.id)) continue
-    const typeLabel = placeholderLabel(entity.type, language)
     if (UNNUMBERED_PLACEHOLDER.has(entity.type)) {
-      tokens.set(entity.id, `[${typeLabel}]`)
+      const stamped = entity.placeholder_token?.trim()
+      const reclassified = entity.attributes?.reclassified === true
+      tokens.set(
+        entity.id,
+        stamped && stampedTokenMatchesType(stamped, entity.type, language, reclassified)
+          ? stamped
+          : `[${placeholderLabel(entity.type, language)}]`,
+      )
       continue
     }
-    const family = placeholderFamily(entity, entities)
-    const grouped = `${family}|${placeholderIdentityKey(entity)}`
-    const index = numbers.get(grouped) ?? 1
-    const familyType =
-      [...ROLE_TAG_TYPES].find((type) => TYPE_TAG_FAMILY[type] === family) ?? entity.type
-    const label =
-      family === 'PERSON'
-        ? placeholderLabel('PERSON_NAME', language)
-        : placeholderLabel(familyType, language)
-    tokens.set(entity.id, `[${label}_${index}]`)
+    pending.push(entity)
+  }
+  const painted = layoutPaintedIds(entities)
+  const tagGroupKey = (entity: Entity) => {
+    const label = tagLabelFor(entity, entities, language)
+    // A merged short name and full name share one resolved id and one number.
+    if (entity.resolved_entity_id) return `${label}|r|${entity.resolved_entity_id}`
+    return `${label}|${placeholderIdentityKey(entity)}`
+  }
+  const groups = new Map<string, Entity[]>()
+  for (const entity of pending) {
+    const key = tagGroupKey(entity)
+    const members = groups.get(key) ?? []
+    members.push(entity)
+    groups.set(key, members)
+  }
+  const ordered = [...groups.entries()].sort((left, right) => {
+    const leftPainted = left[1].some((item) => painted.has(item.id))
+    const rightPainted = right[1].some((item) => painted.has(item.id))
+    if (leftPainted !== rightPainted) return leftPainted ? -1 : 1
+    const leftEntity = left[1].find((item) => painted.has(item.id)) ?? [...left[1]].sort(byDocumentOrder)[0]
+    const rightEntity = right[1].find((item) => painted.has(item.id)) ?? [...right[1]].sort(byDocumentOrder)[0]
+    return byDocumentOrder(leftEntity, rightEntity)
+  })
+  const counters = new Map<string, number>()
+  const numberByKey = new Map<string, number>()
+  for (const [key] of ordered) {
+    const label = key.slice(0, key.indexOf('|'))
+    const next = (counters.get(label) ?? 0) + 1
+    counters.set(label, next)
+    numberByKey.set(key, next)
+  }
+  for (const entity of pending) {
+    const key = tagGroupKey(entity)
+    const label = key.slice(0, key.indexOf('|'))
+    tokens.set(entity.id, `[${label}_${numberByKey.get(key) ?? 1}]`)
   }
   return tokens
 }
@@ -1058,11 +1232,13 @@ export function previewEntityValue(
   if (strategy === 'REDACT') return '█'.repeat(Math.max(3, Math.min(text.length, 14)))
   if (strategy === 'PLACEHOLDER') {
     if (type === 'COURT_NAME') return previewCourtValue(text, language, options)
-    if (options?.placeholderToken?.trim()) return options.placeholderToken.trim()
     if (options?.entity && options.entities?.length) {
       return placeholderTokensByEntityId(options.entities, language).get(options.entity.id)
         ?? placeholderTagPreview(type, language, options?.index ?? 1)
     }
+    const stamped = options?.placeholderToken?.trim()
+    const reclassified = options?.entity?.attributes?.reclassified === true
+    if (stamped && stampedTokenMatchesType(stamped, type, language, reclassified)) return stamped
     return placeholderTagPreview(type, language, options?.index ?? 1)
   }
   if (strategy === 'INITIALS') return initialsOf(text)

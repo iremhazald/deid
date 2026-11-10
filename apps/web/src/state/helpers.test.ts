@@ -117,6 +117,15 @@ describe('seedDecisions', () => {
     expect(isReviewRecommended(entity({ id: 'a', type: 'PERSON_NAME', recommended: true, method: 'AI' }))).toBe(false)
   })
 
+  it('numbers a review copy when the same word is already accepted', () => {
+    const decisions = seedDecisions([
+      entity({ id: 'a', type: 'ORGANISATION', text: 'UYAP', recommended: true }),
+      entity({ id: 'b', type: 'ORGANISATION', text: 'UYAP', recommended: true, needs_review: true }),
+      entity({ id: 'c', type: 'ORGANISATION', text: 'Baro', recommended: true, needs_review: true }),
+    ])
+    expect(decisions).toEqual({ a: 'REDACT', b: 'REDACT', c: 'KEEP' })
+  })
+
   it('keeps every finding in detect-only', () => {
     expect(seedDecisions([
       entity({ id: 'a', type: 'EMAIL', recommended: true }),
@@ -990,6 +999,205 @@ describe('previewEntityValue', () => {
     expect(tokens.get('m1')).toBe('[KİŞİ_1]')
     expect(tokens.get('a1')).toBe('[KİŞİ_2]')
     expect(tokens.get('m2')).toBe('[KİŞİ_1]')
+  })
+
+  it('replaces a placeholder left over from the previous category', () => {
+    const accused = entity({
+      id: 'p1',
+      type: 'ACCUSED_NAME',
+      recommended: true,
+      text: 'Eda Kurt',
+      placeholder_token: '[MÜŞTEKİ_1]',
+    })
+    expect(previewEntityValue('Eda Kurt', 'ACCUSED_NAME', 'PLACEHOLDER', 'tr', {
+      placeholderToken: '[MÜŞTEKİ_1]',
+      entity: accused,
+      entities: [accused],
+    })).toBe('[SANIK_1]')
+    const conflict = entity({
+      id: 'j1',
+      type: 'JUDGE_NAME',
+      recommended: true,
+      text: 'Eda Kurt',
+      placeholder_token: '[KİŞİ_1]',
+    })
+    expect(previewEntityValue('Eda Kurt', 'JUDGE_NAME', 'PLACEHOLDER', 'tr', {
+      placeholderToken: '[KİŞİ_1]',
+      entity: conflict,
+      entities: [conflict],
+    })).toBe('[KİŞİ_1]')
+    const chosen = entity({
+      id: 'p2',
+      type: 'ACCUSED_NAME',
+      recommended: true,
+      text: 'Eda Kurt',
+      placeholder_token: '[KİŞİ_1]',
+      attributes: { reclassified: true },
+    })
+    expect(previewEntityValue('Eda Kurt', 'ACCUSED_NAME', 'PLACEHOLDER', 'tr', {
+      placeholderToken: '[KİŞİ_1]',
+      entity: chosen,
+      entities: [chosen],
+    })).toBe('[SANIK_1]')
+  })
+
+  it('numbers a tag that arrived without an index', () => {
+    const first = entity({
+      id: 'p1',
+      type: 'ACCUSED_NAME',
+      recommended: true,
+      text: 'Eda Kurt',
+      start: 0,
+      placeholder_token: '[SANIK]',
+      attributes: { reclassified: true },
+    })
+    const second = entity({
+      id: 'p2',
+      type: 'ACCUSED_NAME',
+      recommended: true,
+      text: 'Lale Demir',
+      start: 20,
+      placeholder_token: '[SANIK]',
+      attributes: { reclassified: true },
+    })
+    const lawyer = entity({
+      id: 'p3',
+      type: 'LAWYER_NAME',
+      recommended: true,
+      text: 'Kemal Yurt',
+      start: 40,
+      placeholder_token: '[AVUKAT]',
+      attributes: { reclassified: true },
+    })
+    const when = entity({
+      id: 'd1',
+      type: 'DATE',
+      recommended: true,
+      text: '01.01.2020',
+      start: 60,
+      placeholder_token: '[TARİH]',
+    })
+    const entities = [first, second, lawyer, when]
+    expect(previewEntityValue('Eda Kurt', 'ACCUSED_NAME', 'PLACEHOLDER', 'tr', {
+      placeholderToken: '[SANIK]',
+      entity: first,
+      entities,
+    })).toBe('[SANIK_1]')
+    expect(previewEntityValue('Lale Demir', 'ACCUSED_NAME', 'PLACEHOLDER', 'tr', {
+      placeholderToken: '[SANIK]',
+      entity: second,
+      entities,
+    })).toBe('[SANIK_2]')
+    expect(previewEntityValue('Kemal Yurt', 'LAWYER_NAME', 'PLACEHOLDER', 'tr', {
+      placeholderToken: '[AVUKAT]',
+      entity: lawyer,
+      entities,
+    })).toBe('[AVUKAT_1]')
+    expect(previewEntityValue('01.01.2020', 'DATE', 'PLACEHOLDER', 'tr', {
+      placeholderToken: '[TARİH]',
+      entity: when,
+      entities,
+    })).toBe('[TARİH]')
+  })
+
+  it('starts the remaining visible person tag at 1', () => {
+    const only = entity({
+      id: 'p2',
+      type: 'PERSON_NAME',
+      recommended: true,
+      text: 'Lale Demir',
+      start: 20,
+      end: 30,
+      placeholder_token: '[KİŞİ_2]',
+    })
+    expect(previewEntityValue('Lale Demir', 'PERSON_NAME', 'PLACEHOLDER', 'tr', {
+      placeholderToken: '[KİŞİ_2]',
+      entity: only,
+      entities: [only],
+    })).toBe('[KİŞİ_1]')
+
+    const cover = entity({
+      id: 'a1',
+      type: 'ADDRESS',
+      recommended: true,
+      text: 'Kuzey Mahallesi 10 Sokak',
+      start: 0,
+      end: 24,
+      placeholder_token: '[ADRES_1]',
+    })
+    const buried = entity({
+      id: 'p1',
+      type: 'PERSON_NAME',
+      recommended: true,
+      text: 'Eda Kurt',
+      start: 2,
+      end: 10,
+      placeholder_token: '[KİŞİ_1]',
+    })
+    const shown = entity({
+      id: 'p3',
+      type: 'PERSON_NAME',
+      recommended: true,
+      text: 'Lale Demir',
+      start: 40,
+      end: 50,
+      placeholder_token: '[KİŞİ_2]',
+    })
+    const people = [cover, buried, shown]
+    expect(previewEntityValue('Lale Demir', 'PERSON_NAME', 'PLACEHOLDER', 'tr', {
+      placeholderToken: '[KİŞİ_2]',
+      entity: shown,
+      entities: people,
+    })).toBe('[KİŞİ_1]')
+  })
+
+  it('keeps one number when a short name was merged with the full name', () => {
+    const full = entity({
+      id: 'full',
+      type: 'COMPLAINANT_ACCUSED_NAME',
+      recommended: true,
+      text: 'Eda Kurt',
+      start: 0,
+      end: 8,
+      resolved_entity_id: 'eda',
+      placeholder_token: '[MÜŞTEKİ_SANIK_1]',
+    })
+    const short = entity({
+      id: 'short',
+      type: 'COMPLAINANT_ACCUSED_NAME',
+      recommended: true,
+      text: 'Eda',
+      start: 20,
+      end: 23,
+      resolved_entity_id: 'eda',
+      placeholder_token: '[MÜŞTEKİ_SANIK_1]',
+    })
+    const other = entity({
+      id: 'other',
+      type: 'COMPLAINANT_ACCUSED_NAME',
+      recommended: true,
+      text: 'Lale Demir',
+      start: 40,
+      end: 50,
+      resolved_entity_id: 'lale',
+      placeholder_token: '[MÜŞTEKİ_SANIK_2]',
+    })
+    const entities = [full, short, other]
+    expect(previewEntityValue('Eda Kurt', 'COMPLAINANT_ACCUSED_NAME', 'PLACEHOLDER', 'tr', {
+      placeholderToken: full.placeholder_token,
+      entity: full,
+      entities,
+    })).toBe('[MÜŞTEKİ_SANIK_1]')
+    expect(previewEntityValue('Eda', 'COMPLAINANT_ACCUSED_NAME', 'PLACEHOLDER', 'tr', {
+      placeholderToken: short.placeholder_token,
+      entity: short,
+      entities,
+    })).toBe('[MÜŞTEKİ_SANIK_1]')
+    expect(previewEntityValue('Lale Demir', 'COMPLAINANT_ACCUSED_NAME', 'PLACEHOLDER', 'tr', {
+      placeholderToken: other.placeholder_token,
+      entity: other,
+      entities,
+    })).toBe('[MÜŞTEKİ_SANIK_2]')
   })
 
   it('uses English tags from document language, not UI language', () => {

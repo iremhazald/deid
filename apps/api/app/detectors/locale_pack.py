@@ -111,6 +111,7 @@ def run_locale_detectors(
     )
     from app.detectors.legal.repeats import DETECTOR_NAME as NAME_REPEAT
     from app.detectors.legal.repeats import pair_adjacent_person_name_tokens
+    from app.detectors.legal.repeats import propagate_party_title_repeats
     from app.detectors.legal.repeats import propagate_person_name_repeats
     from app.detectors.verification import apply_verification
 
@@ -149,6 +150,10 @@ def run_locale_detectors(
     if repeats:
         merged = merge_rule_candidates(merged + repeats)
         detector_names.append(NAME_REPEAT)
+    titles = propagate_party_title_repeats(pages, merged)
+    if titles:
+        merged = merge_rule_candidates(merged + titles)
+        detector_names.append("TR_PARTY_TITLE_REPEAT")
     identifiers = propagate_identifier_repeats(pages, merged)
     if identifiers:
         merged = merge_rule_candidates(merged + identifiers)

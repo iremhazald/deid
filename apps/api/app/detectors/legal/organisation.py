@@ -14,6 +14,7 @@ from app.detectors.gazetteers import (
     TURKISH_TELECOM,
 )
 from app.detectors.legal.common import fold_tr, make_candidate
+from app.detectors.textutil import fold_tr_identity
 from app.detectors.registry import PageText
 from app.domain.models import EntityCandidate, EntityType
 
@@ -154,6 +155,46 @@ _CITY_INST = re.compile(
 )
 
 _COURT_FOLDS = {fold_tr(name).replace("\u0307", "") for name in TURKISH_COURTS}
+
+
+def _fold_i(body: str) -> str:
+    """Treat Turkish İ/I/ı/i as one letter. re.IGNORECASE does not."""
+    return re.sub(r"[iıIİ]", "[iıIİ]", body)
+
+
+_BAR_PLACES = sorted(TURKISH_CITIES | TURKISH_DISTRICTS, key=len, reverse=True)
+_BAR_PLACE_FOLDS = {fold_tr_identity(name) for name in _BAR_PLACES}
+_BAR_PLACE_BODY = "|".join(_fold_i(re.escape(name)) for name in _BAR_PLACES)
+_BAR_CASE = _fold_i(
+    r"(?:['’]?(?:nun|nın|nün|na|ne|nu|nü|nda|nde|ndan|nden|yla|yle|dur|dır|dir))?"
+)
+# "İstanbul Barosu" / "ANKARA BAROSUNUN". The place must be a known city or district.
+_NAMED_BAR = re.compile(
+    rf"(?<![\wÇĞİÖŞÜçğıöşü])"
+    rf"(?P<span>(?:{_BAR_PLACE_BODY})\s+barosu{_BAR_CASE})"
+    rf"(?![\wÇĞİÖŞÜçğıöşü])",
+    re.IGNORECASE,
+)
+
+
+def is_generic_bar_surface(value: str) -> bool:
+    """Bare ``baro`` and Türkiye Barolar Birliği are not institutions.
+
+    A city or district glued to ``barosu`` names a specific bar and stays.
+    """
+    folded = fold_tr_identity(value)
+    for mark in ("'", "’", "`", "´", "ʼ"):
+        folded = folded.replace(mark, "")
+    compact = " ".join(folded.split())
+    if "turkiye barolar birlig" in compact:
+        return True
+    tokens = compact.split()
+    if not any(token.startswith("baro") for token in tokens):
+        return False
+    for index, token in enumerate(tokens):
+        if token.startswith("baro") and index > 0 and tokens[index - 1] in _BAR_PLACE_FOLDS:
+            return False
+    return True
 
 
 def _fold_place(value: str) -> str:
@@ -346,6 +387,8 @@ def parse_organisations(page: PageText) -> list[EntityCandidate]:
         )
     for match in _CITY_INST.finditer(page.text):
         add(match, "PUBLIC_AUTHORITY", EntityType.ORGANISATION, "span")
+    for match in _NAMED_BAR.finditer(page.text):
+        add(match, "BAR_ASSOCIATION", EntityType.ORGANISATION, "span")
     for start, end, label in iter_bank_spans(page.text):
         add_span(label, start, end, "BANK", EntityType.ORGANISATION)
     for match in _TEL_RE.finditer(page.text):
@@ -366,11 +409,29 @@ def parse_organisations(page: PageText) -> list[EntityCandidate]:
     return found
 
 
+# PDF text turns a large line gap into a blank line, and some layers use U+2028.
+# One blank line still belongs to the same trade name. Two blank lines stop it.
+_COMPANY_TOKEN = r"[A-ZÇĞİÖŞÜ0-9][A-Za-zÇĞİÖŞÜçğıöşü0-9'’&.-]{1,}"
+_COMPANY_BREAK = r"(?:\r\n|\r|\n|\u2028|\u2029|\v|\f)"
+# A trailing space before the line break is still the same name, as in "İTHALAT \nİHRACAT".
+_COMPANY_GAP = (
+    r"(?:[^\S\r\n\u2028\u2029]*[\u00ad\u200b\ufeff]*"
+    rf"(?:{_COMPANY_BREAK}[^\S\r\n\u2028\u2029]*){{1,2}}"
+    r"|[^\S\r\n\u2028\u2029]+)"
+)
+# Longer legal forms come first. TİC.A.Ş. is one token to the name class because
+# "." is allowed inside a token, so A.Ş. alone never sees the glued form.
+_COMPANY_FORM = (
+    r"san\.?\s*ve\s*t[iİIı][cç]\.?\s*a\.?\s*[sş]\.?"
+    r"|san\.?\s*t[iİIı][cç]\.?\s*a\.?\s*[sş]\.?"
+    r"|t[iİIı][cç]\.?\s*a\.?\s*[sş]\.?"
+    r"|san\.?\s*ve\s*t[iİIı][cç]\.?\s*ltd\.?\s*[sş]ti\.?"
+    r"|Anonim\s+Şirketi|A\.\s*Ş\.|AŞ|Limited\s+Şirketi|"
+    r"Ltd\.?\s*(?:Ş|S)[tT][iİIı]\.?|Kooperatifi|Derneği|Vakfı|Sendikası"
+)
 _COMPANY_SUFFIX = re.compile(
-    r"(?P<name>[A-ZÇĞİÖŞÜ0-9][A-Za-zÇĞİÖŞÜçğıöşü0-9'’&.-]{1,}"
-    r"(?:[ \t]+[A-ZÇĞİÖŞÜ0-9][A-Za-zÇĞİÖŞÜçğıöşü0-9'’&.-]{1,}){0,6})[ \t]+"
-    r"(?P<suffix>Anonim\s+Şirketi|A\.\s*Ş\.|AŞ|Limited\s+Şirketi|"
-    r"Ltd\.?\s*(?:Ş|S)[tT][iİIı]\.?|Kooperatifi|Derneği|Vakfı|Sendikası)(?!\w)",
+    rf"(?P<name>{_COMPANY_TOKEN}(?:{_COMPANY_GAP}{_COMPANY_TOKEN}){{0,12}})"
+    rf"{_COMPANY_GAP}(?P<suffix>{_COMPANY_FORM})(?!\w)",
     re.IGNORECASE,
 )
 _PUBLIC_COMPANY_HINTS = (
@@ -387,6 +448,14 @@ _PUBLIC_COMPANY_HINTS = (
     "başsavcılık",
     "bassavcilik",
 )
+
+
+def leading_company_span(text: str) -> tuple[int, int] | None:
+    """Company span when the text starts with the trade name, after indentation."""
+    match = _COMPANY_SUFFIX.search(text)
+    if match is None or text[: match.start()].strip():
+        return None
+    return match.start(), match.end()
 
 
 def parse_companies(page: PageText) -> list[EntityCandidate]:

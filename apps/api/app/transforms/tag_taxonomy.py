@@ -40,6 +40,20 @@ ROLE_SPECIFIC_TYPES: frozenset[EntityType] = frozenset(
         EntityType.DEFENDANT_NAME,
         EntityType.LAWYER_NAME,
         EntityType.JUDGE_NAME,
+        EntityType.PROSECUTOR_NAME,
+        EntityType.COURT_CLERK_NAME,
+        EntityType.VICTIM_NAME,
+        EntityType.COMPLAINANT_NAME,
+        EntityType.SUSPECT_NAME,
+        EntityType.ACCUSED_NAME,
+        EntityType.COMPLAINANT_ACCUSED_NAME,
+        EntityType.INTERVENOR_NAME,
+        EntityType.LEGAL_REPRESENTATIVE_NAME,
+        EntityType.MEDIATOR_NAME,
+        EntityType.INTERPRETER_NAME,
+        EntityType.ENFORCEMENT_OFFICER_NAME,
+        EntityType.NOTARY_NAME,
+        EntityType.ARBITRATOR_NAME,
         EntityType.WITNESS_NAME,
         EntityType.EXPERT_NAME,
     }
@@ -56,13 +70,27 @@ GENERIC_PERSON_TYPES: frozenset[EntityType] = frozenset(
 
 PERSON_MATCH_TYPES: frozenset[EntityType] = ROLE_SPECIFIC_TYPES | GENERIC_PERSON_TYPES
 
-# One role-specific type outranks generic PERSON. Two distinct role-specific
-# types on the same exact name are a conflict → fall back to PERSON.
+# One role-specific type outranks generic PERSON. Müşteki and sanık on the
+# same exact name share MÜŞTEKİ_SANIK. Any other pair of roles falls back to PERSON.
 TYPE_TO_FAMILY: dict[EntityType, str] = {
     EntityType.CLAIMANT_NAME: "CLAIMANT",
     EntityType.DEFENDANT_NAME: "DEFENDANT",
     EntityType.LAWYER_NAME: "LAWYER",
     EntityType.JUDGE_NAME: "JUDGE",
+    EntityType.PROSECUTOR_NAME: "PROSECUTOR",
+    EntityType.COURT_CLERK_NAME: "COURT_CLERK",
+    EntityType.VICTIM_NAME: "VICTIM",
+    EntityType.COMPLAINANT_NAME: "COMPLAINANT",
+    EntityType.SUSPECT_NAME: "SUSPECT",
+    EntityType.ACCUSED_NAME: "ACCUSED",
+    EntityType.COMPLAINANT_ACCUSED_NAME: "COMPLAINANT_ACCUSED",
+    EntityType.INTERVENOR_NAME: "INTERVENOR",
+    EntityType.LEGAL_REPRESENTATIVE_NAME: "LEGAL_REPRESENTATIVE",
+    EntityType.MEDIATOR_NAME: "MEDIATOR",
+    EntityType.INTERPRETER_NAME: "INTERPRETER",
+    EntityType.ENFORCEMENT_OFFICER_NAME: "ENFORCEMENT_OFFICER",
+    EntityType.NOTARY_NAME: "NOTARY",
+    EntityType.ARBITRATOR_NAME: "ARBITRATOR",
     EntityType.WITNESS_NAME: "WITNESS",
     EntityType.EXPERT_NAME: "EXPERT",
     EntityType.PERSON_NAME: "PERSON",
@@ -172,6 +200,160 @@ TAG_SPECS: dict[EntityType, TagSpec] = {
         allowed=True,
         tr="HÂKİM",
         en="JUDGE",
+    ),
+    EntityType.PROSECUTOR_NAME: _spec(
+        "PROSECUTOR",
+        "COURT_NAME",
+        numbered=True,
+        reuse=True,
+        role_propagation="conservative",
+        recommended=True,
+        allowed=True,
+        tr="SAVCI",
+        en="PROSECUTOR",
+    ),
+    EntityType.COURT_CLERK_NAME: _spec(
+        "COURT_CLERK",
+        "COURT_NAME",
+        numbered=True,
+        reuse=True,
+        role_propagation="conservative",
+        recommended=True,
+        allowed=True,
+        tr="KATİP",
+        en="COURT_CLERK",
+    ),
+    EntityType.VICTIM_NAME: _spec(
+        "VICTIM",
+        "COURT_NAME",
+        numbered=True,
+        reuse=True,
+        role_propagation="conservative",
+        recommended=True,
+        allowed=True,
+        tr="MAGDUR",
+        en="VICTIM",
+    ),
+    EntityType.COMPLAINANT_NAME: _spec(
+        "COMPLAINANT",
+        "COURT_NAME",
+        numbered=True,
+        reuse=True,
+        role_propagation="conservative",
+        recommended=True,
+        allowed=True,
+        tr="MÜŞTEKİ",
+        en="COMPLAINANT",
+    ),
+    EntityType.COMPLAINANT_ACCUSED_NAME: _spec(
+        "COMPLAINANT_ACCUSED",
+        "COURT_NAME",
+        numbered=True,
+        reuse=True,
+        role_propagation="conservative",
+        recommended=True,
+        allowed=True,
+        tr="MÜŞTEKİ_SANIK",
+        en="COMPLAINANT_ACCUSED",
+    ),
+    EntityType.SUSPECT_NAME: _spec(
+        "SUSPECT",
+        "COURT_NAME",
+        numbered=True,
+        reuse=True,
+        role_propagation="conservative",
+        recommended=True,
+        allowed=True,
+        tr="SUPHELI",
+        en="SUSPECT",
+    ),
+    EntityType.ACCUSED_NAME: _spec(
+        "ACCUSED",
+        "COURT_NAME",
+        numbered=True,
+        reuse=True,
+        role_propagation="conservative",
+        recommended=True,
+        allowed=True,
+        tr="SANIK",
+        en="ACCUSED",
+    ),
+    EntityType.INTERVENOR_NAME: _spec(
+        "INTERVENOR",
+        "COURT_NAME",
+        numbered=True,
+        reuse=True,
+        role_propagation="conservative",
+        recommended=True,
+        allowed=True,
+        tr="KATILAN",
+        en="INTERVENOR",
+    ),
+    EntityType.LEGAL_REPRESENTATIVE_NAME: _spec(
+        "LEGAL_REPRESENTATIVE",
+        "COURT_NAME",
+        numbered=True,
+        reuse=True,
+        role_propagation="conservative",
+        recommended=True,
+        allowed=True,
+        tr="KANUNI_TEMSILCI",
+        en="LEGAL_REPRESENTATIVE",
+    ),
+    EntityType.MEDIATOR_NAME: _spec(
+        "MEDIATOR",
+        "COURT_NAME",
+        numbered=True,
+        reuse=True,
+        role_propagation="conservative",
+        recommended=True,
+        allowed=True,
+        tr="ARABULUCU",
+        en="MEDIATOR",
+    ),
+    EntityType.INTERPRETER_NAME: _spec(
+        "INTERPRETER",
+        "COURT_NAME",
+        numbered=True,
+        reuse=True,
+        role_propagation="conservative",
+        recommended=True,
+        allowed=True,
+        tr="TERCUMAN",
+        en="INTERPRETER",
+    ),
+    EntityType.ENFORCEMENT_OFFICER_NAME: _spec(
+        "ENFORCEMENT_OFFICER",
+        "COURT_NAME",
+        numbered=True,
+        reuse=True,
+        role_propagation="conservative",
+        recommended=True,
+        allowed=True,
+        tr="ICRA_MEMURU",
+        en="ENFORCEMENT_OFFICER",
+    ),
+    EntityType.NOTARY_NAME: _spec(
+        "NOTARY",
+        "COURT_NAME",
+        numbered=True,
+        reuse=True,
+        role_propagation="conservative",
+        recommended=True,
+        allowed=True,
+        tr="NOTER",
+        en="NOTARY",
+    ),
+    EntityType.ARBITRATOR_NAME: _spec(
+        "ARBITRATOR",
+        "COURT_NAME",
+        numbered=True,
+        reuse=True,
+        role_propagation="conservative",
+        recommended=True,
+        allowed=True,
+        tr="HAKEM",
+        en="ARBITRATOR",
     ),
     EntityType.WITNESS_NAME: _spec(
         "WITNESS",
@@ -711,12 +893,22 @@ def generic_placeholder_families() -> frozenset[str]:
     )
 
 
+_COMPLAINANT_ACCUSED_ROLES = frozenset({"COMPLAINANT", "ACCUSED", "COMPLAINANT_ACCUSED"})
+
+
 def resolve_person_family(types: set[EntityType]) -> str:
     """Pick a person tag family from detector types already present.
 
-    Does not infer roles. Conflicting role-specific types fall back to PERSON.
+    Does not infer roles. Müşteki and sanık on one name share MÜŞTEKİ_SANIK.
+    Any other pair of role-specific types falls back to PERSON.
     """
     roles = {TYPE_TO_FAMILY[item] for item in types if item in ROLE_SPECIFIC_TYPES}
+    if roles and roles <= _COMPLAINANT_ACCUSED_ROLES:
+        if roles == {"COMPLAINANT"}:
+            return "COMPLAINANT"
+        if roles == {"ACCUSED"}:
+            return "ACCUSED"
+        return "COMPLAINANT_ACCUSED"
     if len(roles) > 1:
         return GENERIC_PERSON_FAMILY
     if len(roles) == 1:

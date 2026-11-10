@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   addCustomTerms,
@@ -323,6 +323,7 @@ function App() {
             ? ("KEEP" as TransformationStrategy)
             : (entityStrategies[entity.id] ??
               categoryDefaults[entity.type] ??
+              entity.recommended_strategy ??
               "REDACT");
         const related = relatedEntityIds(entity.id, analysis.entities);
         const source = !entityStrategies[entity.id]
@@ -371,8 +372,11 @@ function App() {
     };
   };
 
+  const previewGeneration = useRef(0);
+
   useEffect(() => {
     if (!analysis || phase !== "review") return;
+    const generation = ++previewGeneration.current;
     const visible = analysisWithoutRemovedFindings(analysis, removedEntityIds);
     const local = previewTransformLocal(
       visible.text,
@@ -389,6 +393,7 @@ function App() {
     const handle = window.setTimeout(() => {
       void previewJob(analysis.job_id, payload)
         .then((response) => {
+          if (generation !== previewGeneration.current) return;
           setServerPreview(response.text);
           if (response.placeholder_tokens) {
             setTokenOverrides(response.placeholder_tokens);
@@ -569,6 +574,25 @@ function App() {
   const applyReclassify = async (entityId: string, entityType: string) => {
     if (!analysis) return;
     const entityIds = relatedEntityIds(entityId, analysis.entities);
+    const idSet = new Set(entityIds);
+    const recommended = catalog?.categories.find(
+      (item) => item.category === entityType,
+    )?.recommended_strategy;
+    setTokenOverrides({});
+    setError("");
+    setAnalysis({
+      ...analysis,
+      entities: analysis.entities.map((entity) =>
+        idSet.has(entity.id)
+          ? {
+              ...entity,
+              type: entityType,
+              ...(recommended ? { recommended_strategy: recommended } : {}),
+              attributes: { ...(entity.attributes ?? {}), reclassified: true },
+            }
+          : entity,
+      ),
+    });
     try {
       const updated = await reclassifyEntities(
         analysis.job_id,

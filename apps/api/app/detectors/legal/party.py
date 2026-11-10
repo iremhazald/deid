@@ -13,7 +13,8 @@ from app.detectors.legal.names import (
     is_workplace_or_job_title,
     iter_person_spans,
 )
-from app.detectors.legal.organisation import parse_companies
+from app.detectors.legal.address import parse_address_tokens
+from app.detectors.legal.organisation import leading_company_span, parse_companies
 from app.detectors.legal.parentage import parse_parentage
 from app.detectors.legal.roles import party_label_pattern, resolve_party
 from app.detectors.registry import PageText
@@ -30,6 +31,23 @@ _NEXT_SECTION = re.compile(
 _TCKN = re.compile(r"(?<!\d)([1-9]\d{10})(?!\d)")
 _MAX_BLOCK = 900
 _PARTY_TYPES = {EntityType.CLAIMANT_NAME, EntityType.DEFENDANT_NAME}
+
+
+def _trade_name_end(text: str, value_start: int) -> int | None:
+    """Include a wrapped unvan even when a blank line ends the party block early."""
+    limit = min(len(text), value_start + _MAX_BLOCK)
+    window_end = limit
+    for match in _OPEN.finditer(text):
+        if match.start() > value_start:
+            window_end = min(window_end, match.start())
+            break
+    header = _NEXT_SECTION.search(text, value_start + 1, limit)
+    if header:
+        window_end = min(window_end, header.start())
+    span = leading_company_span(text[value_start:window_end])
+    if span is None:
+        return None
+    return value_start + span[1]
 
 
 def _block_end(text: str, value_start: int) -> int:
@@ -56,11 +74,20 @@ def parse_party_blocks(page: PageText) -> list[EntityCandidate]:
         role, entity_type = resolve_party(opener.group(1))
         value_start = opener.end()
         value_end = _block_end(page.text, value_start)
+        trade_end = _trade_name_end(page.text, value_start)
+        if trade_end is not None:
+            value_end = max(value_end, trade_end)
         block = page.text[value_start:value_end]
         if len(block.strip()) < 3:
             continue
 
         inner = PageText(page=page.page, text=block, document_offset=page.document_offset + value_start)
+        companies = list(parse_companies(inner))
+        base = page.document_offset
+        occupied = [
+            (item.start - base, item.end - base)
+            for item in (*companies, *parse_address_tokens(inner))
+        ]
         name_matches = iter_person_spans(block)
         person = None
         person_links = []
@@ -73,7 +100,12 @@ def parse_party_blocks(page: PageText) -> list[EntityCandidate]:
             name, local_start, local_end = clipped
             if is_non_person_surface(name) or is_workplace_or_job_title(name):
                 continue
-            if re.search(r"(?i)(?:a\.?\s*ş\.?|\bltd\.?|limited\s+şirket)", name):
+            if re.search(
+                r"(?i)(?:a\.?\s*[sş]\.?|\bltd\.?|limited\s+şirket|t[iİIı]c\.?\s*a\.?\s*[sş])",
+                name,
+            ):
+                continue
+            if any(local_start >= left and local_end <= right for left, right in occupied):
                 continue
             item = make_candidate(
                 page,
@@ -133,7 +165,7 @@ def parse_party_blocks(page: PageText) -> list[EntityCandidate]:
             extras.append(ident)
 
         company_found = False
-        for company in parse_companies(inner):
+        for company in companies:
             company_found = True
             extras.append(
                 company.model_copy(

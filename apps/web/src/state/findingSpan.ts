@@ -78,6 +78,58 @@ export function locateCorrectedSpan(
   return best
 }
 
+export type ResizeGrip = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
+
+export const RESIZE_GRIPS: ResizeGrip[] = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']
+
+/** North and west move the start. South and east move the end. A corner follows the stronger axis. */
+export function gripMovesStart(grip: ResizeGrip, delta: { x: number; y: number }): boolean {
+  if (grip === 'n' || grip === 'w' || grip === 'nw') return true
+  if (grip === 's' || grip === 'e' || grip === 'se') return false
+  if (grip === 'ne') return Math.abs(delta.y) > Math.abs(delta.x)
+  return Math.abs(delta.x) >= Math.abs(delta.y)
+}
+
+/**
+ * Place one edge on the character under the pointer.
+ * The other edge stays put, and the span never becomes empty.
+ */
+export function spanFromGrip(
+  origin: SpanRange,
+  grip: ResizeGrip,
+  offset: number,
+  textLength: number,
+  delta: { x: number; y: number } = { x: 0, y: 0 },
+): SpanRange | null {
+  if (origin.start >= origin.end) return null
+  const clamped = Math.min(textLength, Math.max(0, offset))
+  // Each grip owns one edge. The left and top move the start; the right and
+  // bottom move the end. A grip never switches edges, so pulling left cannot
+  // grow the right side.
+  const moveStart = gripMovesStart(grip, delta)
+  const start = moveStart ? Math.min(clamped, origin.end - 1) : origin.start
+  const end = moveStart ? origin.end : Math.max(clamped, origin.start + 1)
+  if (start < 0 || end > textLength || start >= end) return null
+  return { start, end }
+}
+
+/** Grow until the span touches a neighbour instead of freezing on the first overlap. */
+export function clampSpanAgainstOthers(
+  next: SpanRange,
+  entityId: string,
+  others: ReadonlyArray<{ id: string; start: number; end: number }>,
+  movingStart: boolean,
+): SpanRange | null {
+  let { start, end } = next
+  for (const item of others) {
+    if (item.id === entityId || !(item.start < end && start < item.end)) continue
+    if (movingStart) start = Math.max(start, item.end)
+    else end = Math.min(end, item.start)
+  }
+  if (start >= end) return null
+  return { start, end }
+}
+
 /** The step is blocked when it would run into another finding. */
 export function spanStepOverlaps(
   next: SpanRange,

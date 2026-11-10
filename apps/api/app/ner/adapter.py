@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 
+from app.detectors.legal.court import overlaps_duty_court
 from app.detectors.legal.names import (
     clip_trailing_uets_span,
     is_isolated_letter_person_surface,
@@ -26,6 +27,20 @@ _PERSON_TYPES = {
     EntityType.LAST_NAME,
     EntityType.ALIAS,
     EntityType.JUDGE_NAME,
+    EntityType.PROSECUTOR_NAME,
+    EntityType.COURT_CLERK_NAME,
+    EntityType.VICTIM_NAME,
+    EntityType.COMPLAINANT_NAME,
+    EntityType.SUSPECT_NAME,
+    EntityType.ACCUSED_NAME,
+    EntityType.COMPLAINANT_ACCUSED_NAME,
+    EntityType.INTERVENOR_NAME,
+    EntityType.LEGAL_REPRESENTATIVE_NAME,
+    EntityType.MEDIATOR_NAME,
+    EntityType.INTERPRETER_NAME,
+    EntityType.ENFORCEMENT_OFFICER_NAME,
+    EntityType.NOTARY_NAME,
+    EntityType.ARBITRATOR_NAME,
     EntityType.LAWYER_NAME,
     EntityType.CLAIMANT_NAME,
     EntityType.DEFENDANT_NAME,
@@ -42,6 +57,24 @@ _SOFT_SURFACE_TYPES = _PERSON_TYPES | {
 _EN_POSSESSIVE = re.compile(r"^(.+?)['’]s$", re.IGNORECASE)
 _TRAILING_PUNCT = re.compile(r"[\s,;:]+$")
 _LEADING_PUNCT = re.compile(r"^[\s,;:]+")
+_WORD_CHAR = re.compile(r"[0-9A-Za-zÇĞİÖŞÜçğıöşüİı]")
+
+
+def _snap_word_edges(source: str, start: int, end: int) -> tuple[int, int]:
+    """Grow a span that begins or ends inside a word out to that word's edges.
+
+    The Turkish model labels subword pieces. ``rap`` inside ``Otorapor`` and
+    ``Çİ`` inside ``NÖBETÇİ`` are those pieces. A tag never keeps a syllable.
+    """
+    if start < 0 or end > len(source) or end <= start:
+        return start, end
+    if start > 0 and _WORD_CHAR.match(source[start]) and _WORD_CHAR.match(source[start - 1]):
+        while start > 0 and _WORD_CHAR.match(source[start - 1]):
+            start -= 1
+    if end < len(source) and _WORD_CHAR.match(source[end - 1]) and _WORD_CHAR.match(source[end]):
+        while end < len(source) and _WORD_CHAR.match(source[end]):
+            end += 1
+    return start, end
 
 
 def detector_for(language: str) -> str:
@@ -87,14 +120,16 @@ def ner_prediction_to_candidate(
     entity_type = mapped_entity_type(prediction.label)
     if entity_type is None:
         return None
-    local_start = prediction.start
-    local_end = prediction.end
+    local_start, local_end = _snap_word_edges(page.text, prediction.start, prediction.end)
     page_text = page.text
     if local_start < 0 or local_end > len(page_text) or local_end <= local_start:
         return None
-    if page_text[local_start:local_end] != prediction.text:
+    if overlaps_duty_court(page_text, local_start, local_end):
+        return None
+    reported = page_text[prediction.start : prediction.end] if 0 <= prediction.start < prediction.end <= len(page_text) else ""
+    if page_text[local_start:local_end] != prediction.text and reported != prediction.text:
         # Allow only whitespace-equivalent reported surfaces.
-        if "".join(page_text[local_start:local_end].split()) != "".join(prediction.text.split()):
+        if "".join(reported.split()) != "".join(prediction.text.split()):
             return None
     trimmed = _trim_surface(page_text, local_start, local_end, document_language)
     if trimmed is None:

@@ -13,10 +13,12 @@ from app.domain.models import (
 from app.transforms.possible_matches import generate_possible_matches
 from app.transforms.tag_registry import (
     bind_canonical_ids,
+    matching_bucket,
+    normalize_identity_value,
     stamp_placeholder_tokens,
     tag_locale_for_job,
 )
-from app.transforms.catalog import recommended_strategy
+from app.transforms.catalog import TYPE_TO_ROLE, recommended_strategy
 from app.transforms.tag_taxonomy import (
     PERSON_MATCH_TYPES,
     family_for_type,
@@ -150,10 +152,19 @@ def confirm_entity_merge(job: Job, entity_ids: list[str]):
         return restamp_analysis(job)
 
     types = {item.type for item in members}
+    selected_types = {by_id[entity_id].type for entity_id in entity_ids if entity_id in by_id}
     role_type: EntityType | None = None
     if types <= PERSON_MATCH_TYPES:
         family = resolve_person_family(types)
-        if family != "PERSON":
+        # The two names the user picked decide the tag. A short name and the
+        # full name that are both müşteki/sanık stay on that tag.
+        if selected_types and selected_types <= PERSON_MATCH_TYPES:
+            selected_family = resolve_person_family(selected_types)
+            if selected_family != "PERSON":
+                family = selected_family
+        if family == "COMPLAINANT_ACCUSED":
+            role_type = EntityType.COMPLAINANT_ACCUSED_NAME
+        elif family != "PERSON":
             from app.transforms.tag_taxonomy import ROLE_SPECIFIC_TYPES
 
             role_type = next(
@@ -190,6 +201,10 @@ def confirm_entity_merge(job: Job, entity_ids: list[str]):
     return restamp_analysis(job)
 
 
+def _identity_key(entity: EntityCandidate) -> tuple[str, str]:
+    return matching_bucket(entity.type), normalize_identity_value(entity)
+
+
 def reclassify_entities(job: Job, entity_ids: list[str], entity_type: EntityType):
     if not job.analysis:
         raise ValueError("ANALYSIS_REQUIRED")
@@ -206,7 +221,22 @@ def reclassify_entities(job: Job, entity_ids: list[str], entity_type: EntityType
     if not target_ids:
         return restamp_analysis(job)
 
+    # Same surface is one tag. Move every copy with the selected word, otherwise
+    # a leftover span keeps the old family and the label never changes.
+    identity_keys = {
+        key
+        for item in job.analysis.entities
+        if item.id in target_ids
+        for key in [_identity_key(item)]
+        if key[1] and not key[1].startswith("occ|")
+    }
+    if identity_keys:
+        for item in job.analysis.entities:
+            if _identity_key(item) in identity_keys:
+                target_ids.add(item.id)
+
     strategy = recommended_strategy(entity_type)
+    role = TYPE_TO_ROLE.get(entity_type)
     if entity_type in {EntityType.COMPANY_NAME, EntityType.ORGANISATION}:
         strategy = TransformationStrategy.PLACEHOLDER
     recommended = strategy != TransformationStrategy.KEEP
@@ -221,6 +251,8 @@ def reclassify_entities(job: Job, entity_ids: list[str], entity_type: EntityType
             item.model_copy(
                 update={
                     "type": entity_type,
+                    "role": role,
+                    "role_confident": bool(role),
                     "recommended": recommended,
                     "recommended_strategy": strategy,
                     "attributes": attributes,
@@ -229,6 +261,40 @@ def reclassify_entities(job: Job, entity_ids: list[str], entity_type: EntityType
         )
     job.analysis = job.analysis.model_copy(update={"entities": updated})
     return restamp_analysis(job)
+
+
+def _release_overlap(item: EntityCandidate, start: int, end: int, text: str) -> EntityCandidate | None:
+    """Pull a neighbour off the range the user just claimed.
+
+    A finding immediately to the left used to block the drag. The dragged
+    span keeps the characters, and the neighbour stops at its edge.
+    """
+    if item.end <= start or item.start >= end:
+        return item
+    if item.start >= start and item.end <= end:
+        return None
+    if item.start < start and item.end > end:
+        keep_left = (start - item.start) >= (item.end - end)
+        if keep_left:
+            start_at, end_at = item.start, start
+        else:
+            start_at, end_at = end, item.end
+    elif item.start < start:
+        start_at, end_at = item.start, start
+    else:
+        start_at, end_at = end, item.end
+    surface = text[start_at:end_at]
+    if start_at == item.start:
+        trimmed = surface.rstrip()
+        end_at -= len(surface) - len(trimmed)
+        surface = trimmed
+    else:
+        trimmed = surface.lstrip()
+        start_at += len(surface) - len(trimmed)
+        surface = trimmed
+    if not surface or start_at >= end_at:
+        return None
+    return item.model_copy(update={"text": surface, "start": start_at, "end": end_at})
 
 
 def edit_entity_span(job: Job, entity_id: str, start: int, end: int):
@@ -244,9 +310,6 @@ def edit_entity_span(job: Job, entity_id: str, start: int, end: int):
     target = next((item for item in job.analysis.entities if item.id == entity_id), None)
     if target is None:
         raise ValueError("ENTITY_NOT_FOUND")
-    for item in job.analysis.entities:
-        if item.id != entity_id and item.start < end and start < item.end:
-            raise ValueError("ENTITY_SPAN_OVERLAP")
     page = 0
     offset = 0
     for index, page_text in enumerate(job.page_texts or [text]):
@@ -256,21 +319,25 @@ def edit_entity_span(job: Job, entity_id: str, start: int, end: int):
         offset += len(page_text)
     attributes = dict(target.attributes or {})
     attributes["edited"] = True
-    updated = [
-        item.model_copy(
-            update={
-                "text": surface,
-                "start": start,
-                "end": end,
-                "page": page,
-                "needs_review": False,
-                "attributes": attributes,
-            }
-        )
-        if item.id == entity_id
-        else item
-        for item in job.analysis.entities
-    ]
+    updated = []
+    for item in job.analysis.entities:
+        if item.id == entity_id:
+            updated.append(
+                item.model_copy(
+                    update={
+                        "text": surface,
+                        "start": start,
+                        "end": end,
+                        "page": page,
+                        "needs_review": False,
+                        "attributes": attributes,
+                    }
+                )
+            )
+            continue
+        released = _release_overlap(item, start, end, text)
+        if released is not None:
+            updated.append(released)
     job.analysis = job.analysis.model_copy(update={"entities": updated})
     return restamp_analysis(job)
 

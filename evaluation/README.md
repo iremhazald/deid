@@ -64,7 +64,11 @@ strict match is what the CI gates use, and the gates use Turkish documents.
 
 The same run also reports a person-family match. `PERSON_NAME`, `FIRST_NAME`,
 `LAST_NAME`, `ALIAS`, `CLAIMANT_NAME`, `DEFENDANT_NAME`, `LAWYER_NAME`,
-`JUDGE_NAME`, `WITNESS_NAME`, and `EXPERT_NAME` count as one type. The
+`JUDGE_NAME`, `PROSECUTOR_NAME`, `COURT_CLERK_NAME`, `VICTIM_NAME`,
+`COMPLAINANT_NAME`, `SUSPECT_NAME`, `ACCUSED_NAME`, `INTERVENOR_NAME`,
+`LEGAL_REPRESENTATIVE_NAME`, `MEDIATOR_NAME`, `INTERPRETER_NAME`,
+`ENFORCEMENT_OFFICER_NAME`, `NOTARY_NAME`, `ARBITRATOR_NAME`, `WITNESS_NAME`,
+and `EXPERT_NAME` count as one type. The
 difference shows whether a person was missed or only the role was wrong.
 Person-family numbers are not gated. The product path scores English and
 does not merge it into the Turkish total. `--legacy` does not score English.

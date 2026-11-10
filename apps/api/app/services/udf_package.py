@@ -46,6 +46,7 @@ _DRIVE_LETTER = re.compile(r"^[A-Za-z]:")
 class UdfText:
     text: str
     warnings: tuple[str, ...]
+    running_header_spans: tuple[tuple[int, int], ...] = ()
 
 
 def preflight_udf_bytes(content: bytes, **limits: int) -> None:
@@ -78,7 +79,7 @@ def extract_udf_text(path: Path, *, max_chars: int | None = None) -> UdfText:
         names = _member_names(archive)
         payload = _read_content_xml(archive)
         warnings = _package_warnings(names)
-    text, structured_warning = _text_from_content_xml(payload)
+    text, structured_warning, header_spans = _text_from_content_xml(payload)
     if structured_warning and structured_warning not in warnings:
         warnings = (*warnings, structured_warning)
     limit = max_chars if max_chars is not None else get_settings().redaction_max_extracted_chars
@@ -86,7 +87,7 @@ def extract_udf_text(path: Path, *, max_chars: int | None = None) -> UdfText:
         raise UploadRejected(413, "UDF_TOO_LARGE")
     if not text.strip():
         raise UploadRejected(400, "INVALID_UDF")
-    return UdfText(text, warnings)
+    return UdfText(text, warnings, header_spans)
 
 
 def _inspect_archive(
@@ -149,7 +150,7 @@ def _package_warnings(names: list[str]) -> tuple[str, ...]:
     return ()
 
 
-def _text_from_content_xml(payload: bytes) -> tuple[str, str | None]:
+def _text_from_content_xml(payload: bytes) -> tuple[str, str | None, tuple[tuple[int, int], ...]]:
     if b"<!doctype" in payload.lower() or b"<!entity" in payload.lower():
         raise UploadRejected(400, "UDF_FORMAT_UNSUPPORTED")
     if not _declares_utf8(payload):
@@ -176,14 +177,14 @@ def _text_from_content_xml(payload: bytes) -> tuple[str, str | None]:
     if elements is not None and any(_local(node.tag) == "image" for node in elements.iter()):
         warning = "UDF_UNSUPPORTED_CONTENT"
     if elements is None or not _offsets_are_unambiguous(source):
-        return plain, warning
+        return plain, warning, ()
     try:
-        structured = _render_elements(elements, source)
+        structured, header_spans = _render_elements(root, elements, source)
     except ValueError:
-        return plain, warning
+        return plain, warning, ()
     if not structured.strip():
-        return plain, warning
-    return structured, warning
+        return plain, warning, ()
+    return structured, warning, header_spans
 
 
 def _declares_utf8(payload: bytes) -> bool:
@@ -202,24 +203,90 @@ def _normalize_plain(text: str) -> str:
     return text.replace("\u200b", "").replace("\ufffc", "").replace("\r\n", "\n").replace("\r", "")
 
 
-def _render_elements(elements: ET.Element, source: str) -> str:
-    blocks = _blocks(elements, source)
-    return "\n".join(blocks)
+def _render_elements(
+    root: ET.Element,
+    elements: ET.Element,
+    source: str,
+) -> tuple[str, tuple[tuple[int, int], ...]]:
+    pieces = _pieces(elements, source, _body_font_size(root), in_header=False)
+    return _join_pieces(pieces)
 
 
-def _blocks(parent: ET.Element, source: str) -> list[str]:
-    blocks: list[str] = []
+def _body_font_size(elements: ET.Element) -> float:
+    for node in elements.iter():
+        if _local(node.tag) != "style":
+            continue
+        if node.attrib.get("name") not in {"hvl-default", "default"}:
+            continue
+        size = _font_size(node.attrib.get("size"))
+        if size:
+            return size
+    return 12.0
+
+
+def _pieces(
+    parent: ET.Element,
+    source: str,
+    body_size: float,
+    *,
+    in_header: bool,
+) -> list[tuple[str, bool]]:
+    pieces: list[tuple[str, bool]] = []
     for child in list(parent):
         name = _local(child.tag)
         if name == "paragraph":
             line = _paragraph_text(child, source)
-            if line:
-                blocks.append(line)
+            if not line:
+                continue
+            pieces.append((line, in_header or _paragraph_is_footnote(child, body_size)))
         elif name == "table":
             rows = _table_rows(child, source)
             if rows:
-                blocks.append("\n".join(rows))
-    return blocks
+                pieces.append(("\n".join(rows), in_header))
+        elif name in {"header", "footer"}:
+            pieces.extend(_pieces(child, source, body_size, in_header=True))
+    return pieces
+
+
+def _paragraph_is_footnote(paragraph: ET.Element, body_size: float) -> bool:
+    from app.detectors.legal.court import is_footnote_font
+
+    sizes = [
+        size
+        for child in paragraph.iter()
+        if (size := _font_size(child.attrib.get("size"))) is not None
+    ]
+    if not sizes:
+        return False
+    return is_footnote_font(max(sizes), body_size)
+
+
+def _font_size(raw: str | None) -> float | None:
+    if raw in (None, ""):
+        return None
+    try:
+        size = float(raw)
+    except ValueError:
+        return None
+    if size <= 0 or size > 96:
+        return None
+    return size
+
+
+def _join_pieces(pieces: list[tuple[str, bool]]) -> tuple[str, tuple[tuple[int, int], ...]]:
+    parts: list[str] = []
+    spans: list[tuple[int, int]] = []
+    cursor = 0
+    for index, (line, header) in enumerate(pieces):
+        if index:
+            parts.append("\n")
+            cursor += 1
+        start = cursor
+        parts.append(line)
+        cursor += len(line)
+        if header:
+            spans.append((start, cursor))
+    return "".join(parts), tuple(spans)
 
 
 def _table_rows(table: ET.Element, source: str) -> list[str]:
@@ -231,7 +298,7 @@ def _table_rows(table: ET.Element, source: str) -> list[str]:
         for cell in list(row):
             if _local(cell.tag) != "cell":
                 continue
-            cells.append(" ".join(_blocks(cell, source)))
+            cells.append(" ".join(line for line, _header in _pieces(cell, source, 12.0, in_header=False)))
         if any(cell.strip() for cell in cells):
             rows.append("\t".join(cells))
     return rows

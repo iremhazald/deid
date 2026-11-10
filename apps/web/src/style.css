@@ -3845,18 +3845,36 @@ select,
   color: var(--accent);
 }
 
-.text-span-resize {
-  position: fixed;
-  z-index: 30;
-  width: 10px;
-  height: 10px;
+.text-span-frame {
+  position: absolute;
+  z-index: 20;
   box-sizing: border-box;
-  background: #111318;
+  pointer-events: none;
+  border: 1.5px dashed #3d5f86;
+  border-radius: 2px;
+}
+
+.text-span-resize {
+  position: absolute;
+  z-index: 21;
+  box-sizing: border-box;
+  background: #3d5f86;
   border: 1px solid #fff;
+  box-shadow: 0 0 0 1px #3d5f86;
   border-radius: 1px;
-  cursor: ew-resize;
+  padding: 0;
   touch-action: none;
   user-select: none;
+}
+
+.text-span-resize.is-n,
+.text-span-resize.is-s {
+  cursor: ns-resize;
+}
+
+.text-span-resize.is-e,
+.text-span-resize.is-w {
+  cursor: ew-resize;
 }
 
 body.is-span-dragging .text-span-resize {
@@ -6679,8 +6697,18 @@ body.is-span-dragging .text-span-resize {
 
 .doc-entity.view-preview.is-redact .doc-redact-reveal,
 .doc-redact-bar .doc-redact-reveal,
+.doc-entity.view-preview .doc-mask-pair {
+  display: inline-grid;
+  vertical-align: baseline;
+}
+
+.doc-entity.view-preview .doc-mask-pair > span {
+  grid-area: 1 / 1;
+}
+
 .doc-entity.view-preview .doc-mask-pair .doc-redact-reveal {
-  display: none;
+  display: inline;
+  visibility: hidden;
 }
 
 .doc-entity.view-preview.is-redact:hover,
@@ -6694,7 +6722,7 @@ body.is-span-dragging .text-span-resize {
 .doc-entity.view-preview.is-redact:focus-visible .doc-redact-mask,
 .doc-entity.view-preview:hover .doc-mask-face,
 .doc-entity.view-preview:focus-visible .doc-mask-face {
-  display: none;
+  visibility: hidden;
 }
 
 .doc-entity.view-preview.is-redact:hover .doc-redact-reveal,
@@ -6702,6 +6730,7 @@ body.is-span-dragging .text-span-resize {
 .doc-entity.view-preview:hover .doc-mask-pair .doc-redact-reveal,
 .doc-entity.view-preview:focus-visible .doc-mask-pair .doc-redact-reveal {
   display: inline;
+  visibility: visible;
 }
 
 .doc-entity.is-kept {
@@ -7432,6 +7461,10 @@ body.is-span-dragging .text-span-resize {
 
 .document-viewer-text {
   min-height: 100%;
+}
+
+.text-workspace {
+  position: relative;
 }
 
 .text-workspace .doc-entity {

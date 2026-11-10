@@ -63,6 +63,8 @@ def _court_tail_pattern() -> str:
 _CITY = "|".join(re.escape(name) for name in sorted(TURKISH_CITIES, key=len, reverse=True))
 _TAIL = _court_tail_pattern()
 _REGION = r"(?:Anadolu|Avrupa)"
+# Nöbetçi sits between the city and the court type: "Mersin Nöbetçi Tüketici Mahkemesi".
+_DUTY_WORD = r"(?:n[öÖo]bet[çÇc][iıİI]\s+)?"
 _ORDINAL = r"\d{1,3}\s*\."
 _WS = r"\s+"
 _DAIRESI = r"Daires[iıIİ]"
@@ -113,7 +115,7 @@ _BANNER_PROSE = re.compile(
 # Locative leftovers stay on the court word: "Mahkemesinde", "Mahkemesi'nin".
 _COURT_CASE = r"(?:['’]?(?:nde|ndan|nden|na|ne|n[ıi]|nin|nın|nun|nün|da|de|ta|te|dan|den))?"
 COURT_SPAN = re.compile(
-    rf"(?<!\w)(?:(?:{_CITY}){_WS})?(?:{_REGION}{_WS})?(?:{_ORDINAL}\s*)?(?:{_TAIL}){_COURT_CASE}(?![\wÇĞİÖŞÜçğıöşü]){_CHAMBER}?",
+    rf"(?<!\w)(?:(?:{_CITY}){_WS})?(?:{_REGION}{_WS})?{_DUTY_WORD}(?:{_ORDINAL}\s*)?(?:{_TAIL}){_COURT_CASE}(?![\wÇĞİÖŞÜçğıöşü]){_CHAMBER}?",
     re.IGNORECASE,
 )
 _CHAMBER_LINE = re.compile(
@@ -144,6 +146,36 @@ TOP_HEADER_CM = 1.0
 TOP_HEADER_PT = 72.0 / 2.54 * TOP_HEADER_CM
 # Word boxes sit inside the ink; a short pad left serifs / dotted İ visible.
 HEADER_MASK_PAD_PT = 4.0
+
+
+def _duty_span_start(text: str, match_start: int) -> int:
+    """Include the city when dotted İ kept it outside the court pattern."""
+    cursor = match_start
+    while cursor > 0 and text[cursor - 1].isspace():
+        cursor -= 1
+    token_end = cursor
+    while cursor > 0 and text[cursor - 1].isalpha():
+        cursor -= 1
+    if cursor < token_end and text[cursor].isupper():
+        return cursor
+    return match_start
+
+
+def overlaps_duty_court(text: str, start: int, end: int) -> bool:
+    """True when a span cuts into a nöbetçi court addressee.
+
+    That addressee stays visible. A model slice of it must not be masked.
+    """
+    if end <= start:
+        return False
+    for match in COURT_SPAN.finditer(text):
+        if not is_duty_court(match.group(0)):
+            continue
+        span_start = _duty_span_start(text, match.start())
+        if match.end() <= start or span_start >= end:
+            continue
+        return True
+    return False
 
 
 def is_duty_court(text: str) -> bool:
@@ -201,16 +233,11 @@ def parse_courts(page: "PageText") -> list["EntityCandidate"]:
     found: list[EntityCandidate] = []
     seen: set[tuple[int, int]] = set()
 
-    def add(start: int, end: int, *, force_header: bool = False) -> None:
+    def add(start: int, end: int) -> None:
         start, end = _expand_trailing_chamber(page.text, start, end)
         span = page.text[start:end]
         high = is_high_court_name(span)
-        scope = None
-        if not high and (force_header or _line_is_docket_header(page.text, start)):
-            start, end = _expand_top_header_span(page.text, start)
-            span = page.text[start:end]
-            scope = HEADER_LINE_SCOPE
-        if not high and not scope and not court_ordinal(span) and is_duty_court(span):
+        if not high and not court_ordinal(span) and is_duty_court(span):
             return
         key = (start, end)
         if key in seen or end <= start:
@@ -222,8 +249,6 @@ def parse_courts(page: "PageText") -> list["EntityCandidate"]:
             "court_kind": "high" if high else "local",
             "page_opening": _is_page_opening(page.text, start),
         }
-        if scope:
-            attributes["mask_scope"] = scope
         found.append(
             make_candidate(
                 page,
@@ -232,17 +257,11 @@ def parse_courts(page: "PageText") -> list["EntityCandidate"]:
                 local_end=end,
                 entity_type=EntityType.COURT_NAME,
                 detector="TR_COURT_GRAMMAR",
-                reason=(
-                    "Top-of-page court / docket header line."
-                    if scope
-                    else "City, optional region, optional chamber number, and court type."
-                ),
+                reason="City, optional region, optional chamber number, and court type.",
                 attributes=attributes,
             )
         )
 
-    for start, end in _page_top_header_spans(page.text):
-        add(start, end, force_header=True)
     for match in COURT_SPAN.finditer(page.text):
         start, end = _expand_header_span(page.text, match.start(), match.end())
         add(start, end)
@@ -344,6 +363,34 @@ def _cut_docket(text: str) -> str:
     return text[: match.start()].strip(" \t-–—|")
 
 
+def is_footnote_font(size: float, body_size: float) -> bool:
+    """A running header is set smaller than the body, down in footnote sizes.
+
+    A 14pt title on a 12pt body is still the document heading. An 8pt or 9pt
+    line under a 12pt body is the strip that sits in the top centimetre.
+    """
+    return size <= 10 and body_size - size >= 2
+
+
+def promote_running_header_courts(candidates: list, spans: list[tuple[int, int]]) -> list:
+    """Mark courts that sit in a real running header, not the petition title."""
+    from app.domain.models import EntityType
+
+    if not spans:
+        return candidates
+    for item in candidates:
+        if getattr(item, "type", None) is not EntityType.COURT_NAME:
+            continue
+        attributes = dict(item.attributes or {})
+        if attributes.get("mask_scope") == HEADER_LINE_SCOPE:
+            continue
+        if any(start <= item.start and item.end <= end for start, end in spans):
+            attributes["mask_scope"] = HEADER_LINE_SCOPE
+            item.attributes = attributes
+            item.reason = "Running header in a header story or footnote-sized type."
+    return candidates
+
+
 def _is_docket_header_line(line: str) -> bool:
     return _has_docket_cue(line) or _looks_like_letterhead_row(line)
 
@@ -353,22 +400,6 @@ def _line_is_docket_header(text: str, index: int) -> bool:
     if not _is_docket_header_line(raw):
         return False
     return start < 240 or text[: max(0, index)].count("\n") <= 2
-
-
-def _page_top_header_spans(text: str) -> list[tuple[int, int]]:
-    lines = _iter_lines(text)[:3]
-    spans: list[tuple[int, int]] = []
-    used: set[int] = set()
-    for index, (start, end, raw) in enumerate(lines):
-        if index in used or not _is_docket_header_line(raw):
-            continue
-        span_end = end
-        if index + 1 < len(lines) and _is_docket_header_line(lines[index + 1][2]):
-            span_end = lines[index + 1][1]
-            used.add(index + 1)
-        used.add(index)
-        spans.append((start, span_end))
-    return spans
 
 
 def _expand_top_header_span(text: str, index: int) -> tuple[int, int]:

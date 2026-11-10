@@ -23,13 +23,17 @@ from app.language.resolve import normalize_requested_language
 from app.transforms.resolution import normalize_entity_text, person_resolution_base
 from app.transforms.tag_taxonomy import (
     GENERIC_PERSON_FAMILY,
+    GENERIC_PERSON_TYPES,
     PERSON_MATCH_TYPES,
+    ROLE_SPECIFIC_TYPES,
     family_for_type,
     family_label,
     normalize_tag_locale,
     resolve_person_family,
     spec_for,
 )
+
+_DUAL_PARTY_ROLES = frozenset({"COMPLAINANT", "ACCUSED", "COMPLAINANT_ACCUSED"})
 
 _ALNUM = re.compile(r"[\s\-_.]+")
 _DIGITS = re.compile(r"\D+")
@@ -231,8 +235,125 @@ def stable_canonical_id(entity: EntityCandidate) -> str:
     return entity.resolved_entity_id or entity.id
 
 
+def reading_order_key(entity: EntityCandidate) -> tuple[int, float, float, int, str]:
+    """Top to bottom, then left to right, then earlier text.
+
+    ``reading_page`` / ``reading_y`` / ``reading_x`` are the box the reviewer
+    sees. PDF points grow downward, so a smaller ``y`` is higher on the page.
+    Without a box, page order and the text offset decide.
+    """
+    attributes = entity.attributes or {}
+    page = entity.page
+    raw_page = attributes.get("reading_page")
+    if isinstance(raw_page, int):
+        page = raw_page
+    y_value = attributes.get("reading_y")
+    x_value = attributes.get("reading_x")
+    if isinstance(y_value, (int, float)) and isinstance(x_value, (int, float)):
+        line = round(float(y_value) / 3.0) * 3.0
+        return (page, line, float(x_value), entity.start, entity.id)
+    return (page, float(entity.start), 0.0, entity.start, entity.id)
+
+
+def remember_reading_anchor(
+    entity: EntityCandidate, page: int, y: float, x: float
+) -> EntityCandidate:
+    attributes = dict(entity.attributes or {})
+    attributes["reading_page"] = page
+    attributes["reading_y"] = round(float(y), 2)
+    attributes["reading_x"] = round(float(x), 2)
+    return entity.model_copy(update={"attributes": attributes})
+
+
+def apply_layout_reading_order(
+    entities: list[EntityCandidate],
+    pages: list,
+    layouts: list[dict] | None,
+) -> list[EntityCandidate]:
+    """Record each span's line box from the PDF layout, when one exists."""
+    if not layouts:
+        return entities
+    offsets = {
+        page.page: page.document_offset
+        for page in pages
+        if hasattr(page, "page") and hasattr(page, "document_offset")
+    }
+    runs_by_page = {int(item["page"]): list(item.get("runs") or []) for item in layouts}
+    updated: list[EntityCandidate] = []
+    for entity in entities:
+        runs = runs_by_page.get(entity.page) or []
+        local = entity.start - offsets.get(entity.page, 0)
+        chosen = next((run for run in runs if run["start"] <= local < run["end"]), None)
+        if chosen is None:
+            prior = [run for run in runs if run["start"] <= local]
+            chosen = max(prior, key=lambda run: run["start"]) if prior else None
+        if chosen is None:
+            updated.append(entity)
+            continue
+        updated.append(
+            remember_reading_anchor(entity, entity.page, float(chosen["y0"]), float(chosen["x0"]))
+        )
+    return updated
+
+
+def apply_span_reading_order(
+    entities: list[EntityCandidate], page_spans: list[dict] | None
+) -> list[EntityCandidate]:
+    """Record the page and corner of the box actually drawn for each finding."""
+    anchors: dict[str, tuple[int, float, float]] = {}
+    for page in page_spans or []:
+        page_num = int(page["page"])
+        for span in page.get("spans") or []:
+            rectangles = span.get("rectangles") or []
+            if not rectangles:
+                continue
+            anchor = (
+                page_num,
+                min(float(item["y0"]) for item in rectangles),
+                min(float(item["x0"]) for item in rectangles),
+            )
+            current = anchors.get(span["entity_id"])
+            if current is None or anchor < current:
+                anchors[span["entity_id"]] = anchor
+    if not anchors:
+        return entities
+    updated: list[EntityCandidate] = []
+    for entity in entities:
+        anchor = anchors.get(entity.id)
+        if anchor is None:
+            updated.append(entity)
+            continue
+        page, y_value, x_value = anchor
+        updated.append(remember_reading_anchor(entity, page, y_value, x_value))
+    return updated
+
+
+def _layout_painted_ids(
+    entities: list[EntityCandidate], eligible_ids: set[str]
+) -> set[str]:
+    """Spans the text view actually draws.
+
+    A longer span wins. A name that starts inside it is not a visible tag, so
+    it must not occupy [KİŞİ_1].
+    """
+    ordered = sorted(
+        entities,
+        key=lambda item: (item.start, item.start - item.end, item.id),
+    )
+    cursor = -1
+    painted: set[str] = set()
+    for entity in ordered:
+        if entity.start < cursor:
+            continue
+        if entity.id in eligible_ids:
+            painted.add(entity.id)
+        if entity.end > cursor:
+            cursor = entity.end
+    return painted
+
+
 def _identity_canonical(identity: _Identity) -> str:
-    first = min(identity.members, key=lambda item: (item.page, item.start, item.id))
+    first = min(identity.members, key=reading_order_key)
     return first.resolved_entity_id or first.id
 
 
@@ -246,9 +367,10 @@ def build_document_tag_registry(
 ) -> DocumentTagRegistry:
     """Build the document registry.
 
-    Display numbers are family-local and contiguous among identities that still
-    have at least one active PLACEHOLDER occurrence. Persistent identity is
-    ``resolved_entity_id`` / canonical group id, never PERSON_N.
+    Display numbers are family-local and follow reading order. A numbered
+    category keeps ``[SANIK_1]`` even when the current preview masks that span
+    with another method. Persistent identity is ``resolved_entity_id`` /
+    canonical group id, never PERSON_N.
     """
     locale = normalize_tag_locale(locale)
     entities = bind_canonical_ids(entities, state)
@@ -275,7 +397,7 @@ def build_document_tag_registry(
             grouped[root] = identity
         identity.members.append(entity)
 
-    appearance: list[tuple[str, int, int, str, str]] = []
+    appearance: list[tuple[str, tuple[int, float, float, int, str], str]] = []
     for root, identity in grouped.items():
         types = {member.type for member in identity.members}
         if any(member.type in PERSON_MATCH_TYPES for member in identity.members):
@@ -293,7 +415,11 @@ def build_document_tag_registry(
             )
         else:
             identity.family = family_for_type(identity.members[0].type)
-        first = min(identity.members, key=lambda item: (item.page, item.start, item.id))
+        chosen = _explicit_reclassify_family(identity.members)
+        if chosen is not None:
+            identity.family = chosen
+            identity.conflict = False
+        first = min(identity.members, key=reading_order_key)
         identity.canonical_key = first.resolved_entity_id or first.id
         spec = spec_for(
             next(
@@ -308,45 +434,36 @@ def build_document_tag_registry(
         if not spec.numbered:
             identity.number = None
             continue
-        appearance.append((identity.family, first.page, first.start, first.id, root))
+        appearance.append((identity.family, reading_order_key(first), root))
 
     appearance.sort()
     by_family: dict[str, list[str]] = {}
     root_by_canonical: dict[tuple[str, str], str] = {}
     family_roots: dict[str, list[str]] = {}
-    for family, _page, _start, _eid, root in appearance:
+    for family, _position, root in appearance:
         canonical = grouped[root].canonical_key
         by_family.setdefault(family, []).append(canonical)
         family_roots.setdefault(family, []).append(root)
         root_by_canonical[(family, canonical)] = root
 
-    append_ids = set(state.append_ids) if state else set()
     if state is not None:
         for family, canonicals in by_family.items():
-            existing = list(state.family_order.get(family) or [])
-            known = set(existing)
-            if not existing:
-                state.family_order[family] = list(canonicals)
+            previous = set(state.family_order.get(family) or [])
+            state.family_order[family] = list(canonicals)
+            if not append_new:
                 continue
             for canonical in canonicals:
-                if canonical in known:
+                if canonical in previous or canonical in state.append_ids:
                     continue
-                existing.append(canonical)
-                known.add(canonical)
-                if append_new or canonical in append_ids:
-                    if canonical not in state.append_ids:
-                        state.append_ids.append(canonical)
-            state.family_order[family] = existing
+                state.append_ids.append(canonical)
 
-    restrict_active = bool(placeholder_entities) and set(item.id for item in placeholder_entities) != {
-        item.id for item in entities
-    }
-    active_ids = {item.id for item in placeholder_entities} if placeholder_entities else set()
-
-    def _is_active(root: str) -> bool:
-        if not restrict_active:
-            return True
-        return any(member.id in active_ids for member in grouped[root].members)
+    # Spans that are not drawn as a label must not keep [KİŞİ_1]. A removed
+    # finding and a name buried inside a longer span are numbered after the
+    # labels the reader actually sees, and a numbered category still gets an index.
+    all_ids = {item.id for item in entities}
+    eligible_ids = {item.id for item in placeholder_entities}
+    paint_ids = all_ids if eligible_ids == all_ids else eligible_ids
+    painted = _layout_painted_ids(entities, paint_ids)
 
     for family, roots in family_roots.items():
         order_ids = (state.family_order.get(family) if state else None) or by_family.get(family, [])
@@ -362,12 +479,13 @@ def build_document_tag_registry(
             if item_root not in seen_roots:
                 ordered_roots.append(item_root)
                 seen_roots.add(item_root)
-        counter = 0
-        for item_root in ordered_roots:
-            if not _is_active(item_root):
-                grouped[item_root].number = None
-                continue
-            counter += 1
+        visible_roots = [
+            item_root
+            for item_root in ordered_roots
+            if any(member.id in painted for member in grouped[item_root].members)
+        ]
+        hidden_roots = [item_root for item_root in ordered_roots if item_root not in set(visible_roots)]
+        for counter, item_root in enumerate([*visible_roots, *hidden_roots], start=1):
             grouped[item_root].number = counter
 
     entity_identity = {entity.id: forest.find(entity_nodes[entity.id]) for entity in entities}
@@ -397,7 +515,7 @@ def _number_unnumbered_courts(
             and not court_ordinal(entity.text)
             and not is_duty_court(entity.text)
         ),
-        key=lambda entity: (entity.page, entity.start, entity.id),
+        key=reading_order_key,
     )
     tokens = {
         entity.id: f"[{label}_{index}]" for index, entity in enumerate(ordered, start=1)
@@ -412,6 +530,78 @@ def _number_unnumbered_courts(
     ]
 
 
+def promote_complainant_accused(entities: list[EntityCandidate]) -> list[EntityCandidate]:
+    """Retype a name that is both müşteki and sanık as Müşteki/Sanık.
+
+    Generic person spans of that same identity follow the combined category.
+    Any other role on the name leaves the members unchanged.
+    """
+    forest = _UnionFind()
+    nodes: dict[str, str] = {}
+    for entity in entities:
+        if entity.type not in PERSON_MATCH_TYPES:
+            continue
+        node = f"e|{entity.id}"
+        forest.add(node)
+        forest.union(node, _surface_node(entity))
+        resolved = _resolved_node(entity)
+        if resolved:
+            forest.union(node, resolved)
+        alias = _alias_surface_node(entity)
+        if alias:
+            forest.union(node, alias)
+        nodes[entity.id] = node
+
+    grouped: dict[str, list[EntityCandidate]] = {}
+    for entity in entities:
+        node = nodes.get(entity.id)
+        if node is None:
+            continue
+        grouped.setdefault(forest.find(node), []).append(entity)
+
+    retype: set[str] = set()
+    for members in grouped.values():
+        if any((member.attributes or {}).get("reclassified") for member in members):
+            continue
+        roles = {
+            family_for_type(member.type)
+            for member in members
+            if member.type in ROLE_SPECIFIC_TYPES
+        }
+        both_sides = "COMPLAINANT" in roles and "ACCUSED" in roles
+        already_combined = "COMPLAINANT_ACCUSED" in roles and roles != {"COMPLAINANT_ACCUSED"}
+        if not roles <= _DUAL_PARTY_ROLES or not (both_sides or already_combined):
+            continue
+        for member in members:
+            if member.type in GENERIC_PERSON_TYPES or member.type in {
+                EntityType.COMPLAINANT_NAME,
+                EntityType.ACCUSED_NAME,
+            }:
+                retype.add(member.id)
+    if not retype:
+        return entities
+    return [
+        entity.model_copy(
+            update={"type": EntityType.COMPLAINANT_ACCUSED_NAME, "role": "COMPLAINANT_ACCUSED"}
+        )
+        if entity.id in retype
+        else entity
+        for entity in entities
+    ]
+
+
+def _explicit_reclassify_family(members: list[EntityCandidate]) -> str | None:
+    """A category the user just picked owns the tag, even if another span remains."""
+    families = {
+        family_for_type(member.type)
+        for member in members
+        if (member.attributes or {}).get("reclassified")
+    }
+    if len(families) == 1:
+        return next(iter(families))
+    return None
+
+
 def stamp_placeholder_tokens(
     entities: list[EntityCandidate],
     locale: str,
@@ -422,6 +612,7 @@ def stamp_placeholder_tokens(
 ) -> list[EntityCandidate]:
     """Attach the authoritative PLACEHOLDER token to every entity."""
     entities = bind_canonical_ids(entities, state)
+    entities = promote_complainant_accused(entities)
     active = placeholder_entities if placeholder_entities is not None else entities
     registry = build_document_tag_registry(
         entities,

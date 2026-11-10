@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   collapseForList,
   effectiveStrategy,
@@ -161,6 +161,11 @@ export function DetectionList({
     setMethodsDismissed(false);
   }, [activeId]);
 
+  const onShowPreservedChangeRef = useRef(onShowPreservedChange);
+  onShowPreservedChangeRef.current = onShowPreservedChange;
+  const preservedPane = useRef<boolean | null>(null);
+  const revealKey = useRef("");
+
   useEffect(() => {
     if (!activeId) return;
     const rowId = listRowId(activeId, entities);
@@ -172,23 +177,25 @@ export function DetectionList({
       categoryDefaults,
       entityStrategies,
     );
-    if (kept) {
-      setPane("kept");
-      onShowPreservedChange?.(true);
-    } else {
-      setPane("detections");
-      onShowPreservedChange?.(false);
+    if (kept) setPane("kept");
+    else setPane("detections");
+    if (preservedPane.current !== kept) {
+      preservedPane.current = kept;
+      onShowPreservedChangeRef.current?.(kept);
     }
     const groupId = presentationGroupForEntityType(entity.type);
     const family = families.find((item) => item.id === groupId);
-    setOpenGroup(groupId);
-    setOpenSubcategory(
+    const subcategory =
       family && !family.flattened
         ? subcategoryForEntityType(entity.type)
-        : null,
-    );
+        : null;
+    setOpenGroup(groupId);
+    setOpenSubcategory(subcategory);
+    const nextReveal = `${rowId}|${groupId}|${subcategory ?? ""}`;
+    if (revealKey.current === nextReveal) return;
+    revealKey.current = nextReveal;
     return scheduleReviewPanelRowReveal(`entity-row-${rowId}`);
-  }, [activeId, entities, families, onShowPreservedChange]);
+  }, [activeId, entities, families, decisions, categoryDefaults, entityStrategies]);
 
   useEffect(() => {
     if (!selectedManualId) return;

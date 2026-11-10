@@ -115,6 +115,20 @@ def _resolution_group(entity_type: EntityType) -> str:
         EntityType.EXPERT_NAME,
         EntityType.LAWYER_NAME,
         EntityType.JUDGE_NAME,
+        EntityType.PROSECUTOR_NAME,
+        EntityType.COURT_CLERK_NAME,
+        EntityType.VICTIM_NAME,
+        EntityType.COMPLAINANT_NAME,
+        EntityType.SUSPECT_NAME,
+        EntityType.ACCUSED_NAME,
+        EntityType.COMPLAINANT_ACCUSED_NAME,
+        EntityType.INTERVENOR_NAME,
+        EntityType.LEGAL_REPRESENTATIVE_NAME,
+        EntityType.MEDIATOR_NAME,
+        EntityType.INTERPRETER_NAME,
+        EntityType.ENFORCEMENT_OFFICER_NAME,
+        EntityType.NOTARY_NAME,
+        EntityType.ARBITRATOR_NAME,
     }:
         return "PERSON"
     return entity_type.value

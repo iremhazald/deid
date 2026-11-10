@@ -32,6 +32,9 @@ _DETECTOR_RANK: dict[str, int] = {
     "TR_MENTIONED_PERSON": 70,
     "TR_NARRATIVE_PERSON": 62,
     "TR_NAME_REPEAT": 69,
+    "TR_ORG_REPEAT": 68,
+    "TR_SURFACE_REPEAT": 68,
+    "TR_PARTY_TITLE_REPEAT": 92,
     "TR_ADDRESS_TOKENS": 68,
     "TR_PHONE_CONTEXT": 66,
     "TR_MOBILE_PHONE": 65,
@@ -101,6 +104,20 @@ _TYPE_RANK = {
     EntityType.PROFESSIONAL_ID: 6,
     EntityType.LAWYER_NAME: 5,
     EntityType.JUDGE_NAME: 5,
+    EntityType.PROSECUTOR_NAME: 5,
+    EntityType.COURT_CLERK_NAME: 5,
+    EntityType.VICTIM_NAME: 5,
+    EntityType.COMPLAINANT_NAME: 5,
+    EntityType.SUSPECT_NAME: 5,
+    EntityType.ACCUSED_NAME: 5,
+    EntityType.COMPLAINANT_ACCUSED_NAME: 5,
+    EntityType.INTERVENOR_NAME: 5,
+    EntityType.LEGAL_REPRESENTATIVE_NAME: 5,
+    EntityType.MEDIATOR_NAME: 5,
+    EntityType.INTERPRETER_NAME: 5,
+    EntityType.ENFORCEMENT_OFFICER_NAME: 5,
+    EntityType.NOTARY_NAME: 5,
+    EntityType.ARBITRATOR_NAME: 5,
     EntityType.DEFENDANT_NAME: 5,
     EntityType.CLAIMANT_NAME: 5,
     EntityType.WITNESS_NAME: 5,
@@ -112,6 +129,20 @@ _PERSON = {
     EntityType.LAST_NAME,
     EntityType.ALIAS,
     EntityType.JUDGE_NAME,
+    EntityType.PROSECUTOR_NAME,
+    EntityType.COURT_CLERK_NAME,
+    EntityType.VICTIM_NAME,
+    EntityType.COMPLAINANT_NAME,
+    EntityType.SUSPECT_NAME,
+    EntityType.ACCUSED_NAME,
+    EntityType.COMPLAINANT_ACCUSED_NAME,
+    EntityType.INTERVENOR_NAME,
+    EntityType.LEGAL_REPRESENTATIVE_NAME,
+    EntityType.MEDIATOR_NAME,
+    EntityType.INTERPRETER_NAME,
+    EntityType.ENFORCEMENT_OFFICER_NAME,
+    EntityType.NOTARY_NAME,
+    EntityType.ARBITRATOR_NAME,
     EntityType.LAWYER_NAME,
     EntityType.CLAIMANT_NAME,
     EntityType.DEFENDANT_NAME,
@@ -523,6 +554,9 @@ def _clip_person_candidates(candidates: list[EntityCandidate]) -> list[EntityCan
         if item.type not in _PERSON:
             kept.append(item)
             continue
+        if item.type in _PARTY_TITLE_TYPES and _COMPANY_SUFFIX_KEEP.search(item.text):
+            kept.append(item)
+            continue
         item = _expose_case_suffix(item)
         if item.detector in {
             "TR_NAME_REPEAT",
@@ -694,6 +728,12 @@ def _drop_nested_wrappers(candidates: list[EntityCandidate]) -> list[EntityCandi
         if item.detector == "USER_DEFINED_TERM" or item.type in _KEEP_WRAPPER_TYPES:
             kept.append(item)
             continue
+        # A detected person name is the value itself. One token from the
+        # language model must not make the full name look like a wrapper.
+        taken = take_person_name(item.text)
+        if taken and taken[0] == " ".join(item.text.split()):
+            kept.append(item)
+            continue
         inners = [
             other
             for other in candidates
@@ -813,6 +853,19 @@ def promote_counsel_titles(pages: list, candidates: list[EntityCandidate]) -> li
     return updated
 
 
+# A company named as davacı or davalı keeps that party label over a generic company tag.
+_PARTY_TITLE_TYPES = frozenset({EntityType.CLAIMANT_NAME, EntityType.DEFENDANT_NAME})
+# A company, court, institution, or address owns the words inside its span.
+_SPAN_OWNS_PERSON = frozenset(
+    {
+        EntityType.ORGANISATION,
+        EntityType.COMPANY_NAME,
+        EntityType.COURT_NAME,
+        EntityType.ADDRESS,
+    }
+)
+
+
 def merge_rule_candidates(candidates: list[EntityCandidate]) -> list[EntityCandidate]:
     """Keep the most specific overlapping candidate per semantic group."""
     working = _drop_nested_wrappers(
@@ -841,6 +894,14 @@ def merge_rule_candidates(candidates: list[EntityCandidate]) -> list[EntityCandi
             if not _overlaps(item, other):
                 continue
             other_group = _group_of(other.type)
+            if (
+                item.type in _PARTY_TITLE_TYPES
+                and other.type in _PARTY_TITLE_TYPES
+                and _contains(item, other)
+                and _COMPANY_SUFFIX_KEEP.search(item.text)
+            ):
+                kept = [kept_item for kept_item in kept if kept_item.id != other.id]
+                continue
             if group and group == other_group:
                 if _has_professional_title(item.text) and _contains(item, other):
                     kept = [kept_item for kept_item in kept if kept_item.id != other.id]
@@ -853,13 +914,29 @@ def merge_rule_candidates(candidates: list[EntityCandidate]) -> list[EntityCandi
             if item.type == other.type:
                 conflict = True
                 break
-            if other.type in {EntityType.ORGANISATION, EntityType.COMPANY_NAME, EntityType.COURT_NAME} and item.type in _PERSON:
+            if (
+                item.type in _PARTY_TITLE_TYPES
+                and other.type == EntityType.COMPANY_NAME
+                and _contains(item, other)
+                and _COMPANY_SUFFIX_KEEP.search(item.text)
+            ):
+                kept = [kept_item for kept_item in kept if kept_item.id != other.id]
+                continue
+            if (
+                other.type in _PARTY_TITLE_TYPES
+                and item.type == EntityType.COMPANY_NAME
+                and _contains(other, item)
+                and _COMPANY_SUFFIX_KEEP.search(other.text)
+            ):
+                conflict = True
+                break
+            if other.type in _SPAN_OWNS_PERSON and item.type in _PERSON:
                 if _contains(other, item) or (
                     other.type == EntityType.COURT_NAME and _person_is_institutional_partial(other, item)
                 ):
                     conflict = True
                     break
-            if item.type in {EntityType.ORGANISATION, EntityType.COMPANY_NAME, EntityType.COURT_NAME} and other.type in _PERSON:
+            if item.type in _SPAN_OWNS_PERSON and other.type in _PERSON:
                 if _contains(item, other) or (
                     item.type == EntityType.COURT_NAME and _person_is_institutional_partial(item, other)
                 ):

@@ -12,7 +12,7 @@ import re
 from typing import TYPE_CHECKING
 
 from app.detectors.legal.merge import detector_rank
-from app.detectors.legal.names import collapse_name, strip_possessive
+from app.detectors.legal.names import collapse_name, is_bare_uyap_word, strip_possessive
 from app.detectors.textutil import fold_tr_identity
 from app.domain.models import DetectionMethod, EntityCandidate, EntityType, VerificationLevel
 
@@ -22,6 +22,20 @@ _PERSON = {
     EntityType.LAST_NAME,
     EntityType.ALIAS,
     EntityType.JUDGE_NAME,
+    EntityType.PROSECUTOR_NAME,
+    EntityType.COURT_CLERK_NAME,
+    EntityType.VICTIM_NAME,
+    EntityType.COMPLAINANT_NAME,
+    EntityType.SUSPECT_NAME,
+    EntityType.ACCUSED_NAME,
+    EntityType.COMPLAINANT_ACCUSED_NAME,
+    EntityType.INTERVENOR_NAME,
+    EntityType.LEGAL_REPRESENTATIVE_NAME,
+    EntityType.MEDIATOR_NAME,
+    EntityType.INTERPRETER_NAME,
+    EntityType.ENFORCEMENT_OFFICER_NAME,
+    EntityType.NOTARY_NAME,
+    EntityType.ARBITRATOR_NAME,
     EntityType.LAWYER_NAME,
     EntityType.CLAIMANT_NAME,
     EntityType.DEFENDANT_NAME,
@@ -40,6 +54,19 @@ if TYPE_CHECKING:
 
 DETECTOR_NAME = "TR_NAME_REPEAT"
 PAIR_DETECTOR_NAME = "TR_NAME_PAIR"
+PARTY_TITLE_REPEAT = "TR_PARTY_TITLE_REPEAT"
+SURFACE_REPEAT = "TR_SURFACE_REPEAT"
+_PARTY_TITLE_TYPES = {EntityType.CLAIMANT_NAME, EntityType.DEFENDANT_NAME}
+_TITLE_BREAK = r"(?:\r\n|\r|\n|\u2028|\u2029|\v|\f)"
+_TITLE_GAP = (
+    r"(?:[^\S\r\n\u2028\u2029]*"
+    rf"(?:{_TITLE_BREAK}[^\S\r\n\u2028\u2029]*){{1,2}}"
+    r"|[^\S\r\n\u2028\u2029]+)"
+)
+_LEGAL_FORM = re.compile(
+    r"(?i)(?:san\.?\s*ve\s*)?t[iİIı][cç]\.?\s*a\.?\s*[sş]\.?|"
+    r"a\.\s*[sş]\.|limited\s+şirket|ltd\.?\s*[sş]ti"
+)
 
 _WORD = r"A-Za-zÇĞİÖŞÜçğıöşüÂÎÛâîû"
 # PDF layers often insert 10–30 spaces between given name and surname, or wrap
@@ -342,3 +369,237 @@ def propagate_person_name_repeats(
                     )
                 )
     return found
+
+
+def _party_title_pattern(name: str) -> re.Pattern[str] | None:
+    tokens = collapse_name(name).split()
+    if not 2 <= len(tokens) <= 16 or not _LEGAL_FORM.search(name):
+        return None
+    parts = [_token_regex(token) for token in tokens]
+    parts[-1] = parts[-1] + _POSSESSIVE
+    body = _TITLE_GAP.join(parts)
+    return re.compile(rf"(?<![{_WORD}]){body}(?![{_WORD}])")
+
+
+def propagate_party_title_repeats(
+    pages: list["PageText"],
+    seeds: list[EntityCandidate],
+) -> list[EntityCandidate]:
+    """Reuse a davacı or davalı trade name wherever the same words appear.
+
+    The heading span is the source of the label. A later line wrap, including
+    a non-breaking space, stays one span of that same party type.
+    """
+    prototypes: list[EntityCandidate] = []
+    seen: set[str] = set()
+    for item in sorted(seeds, key=lambda candidate: len(collapse_name(candidate.text)), reverse=True):
+        if item.type not in _PARTY_TITLE_TYPES:
+            continue
+        pattern = _party_title_pattern(item.text)
+        if pattern is None:
+            continue
+        key = fold_tr_identity("".join(collapse_name(item.text).split()))
+        if key in seen:
+            continue
+        seen.add(key)
+        prototypes.append(item)
+    if not prototypes:
+        return []
+
+    found: list[EntityCandidate] = []
+    for page in pages:
+        for prototype in prototypes:
+            pattern = _party_title_pattern(prototype.text)
+            if pattern is None:
+                continue
+            for match in pattern.finditer(page.text):
+                surface = match.group(0)
+                start = page.document_offset + match.start()
+                end = page.document_offset + match.end()
+                if any(item.start == start and item.end == end and item.type == prototype.type for item in seeds):
+                    continue
+                if any(item.start == start and item.end == end for item in found):
+                    continue
+                found.append(
+                    _inherit_scoring_provenance(
+                        EntityCandidate(
+                            text=surface,
+                            type=prototype.type,
+                            start=start,
+                            end=end,
+                            page=page.page,
+                            detector=PARTY_TITLE_REPEAT,
+                            method=DetectionMethod.DETERMINISTIC,
+                            validated=True,
+                            role=prototype.role,
+                            reason="Later mention of a party trade name already found in this document.",
+                            verification_level=VerificationLevel.REVIEW_RECOMMENDED,
+                            verification_method="party_title_repeat",
+                            attributes={
+                                "source": "party_title_repeat",
+                                "seed_text": prototype.text,
+                                "seed_detector": prototype.detector,
+                            },
+                        ),
+                        prototype,
+                    )
+                )
+    return found
+
+
+def _shares_numbered_placeholder(item: EntityCandidate) -> bool:
+    """True when this type is shown as a numbered tag such as KURUM_1."""
+    from app.transforms.tag_taxonomy import spec_for
+
+    spec = spec_for(item.type)
+    return spec.numbered and spec.reuse
+
+
+def _surface_repeat_pattern(name: str) -> re.Pattern[str] | None:
+    """Whole-value search for a detection already numbered in this document.
+
+    The value is the full detected words, not each word on its own. A dot on
+    the left stays outside the match so a host is not retagged.
+    """
+    tokens = collapse_name(strip_possessive(name)).split()
+    if not tokens or len(tokens) > 12:
+        return None
+    significant = re.sub(rf"[^{_WORD}0-9]", "", "".join(tokens))
+    if len(significant) < 3:
+        return None
+    parts = [_token_regex(token) for token in tokens]
+    if re.search(rf"[{_WORD}]", tokens[-1]):
+        parts[-1] = parts[-1] + _POSSESSIVE
+    gap = r"[^\S\r\n\u2028\u2029]+"
+    body = gap.join(parts)
+    return re.compile(rf"(?<![{_WORD}0-9.]){body}(?![{_WORD}0-9])")
+
+
+def propagate_detected_surface_repeats(
+    pages: list["PageText"],
+    seeds: list[EntityCandidate],
+) -> list[EntityCandidate]:
+    """Copy every numbered detection onto the same words later in the document.
+
+    KURUM_1, KİŞİ_1, PLAKA_1 and the other numbered tags all follow this rule.
+    A later copy keeps the source type, so it receives the same number.
+    """
+    prototypes: list[EntityCandidate] = []
+    seen: set[tuple[str, str]] = set()
+    for item in sorted(seeds, key=lambda candidate: len(collapse_name(candidate.text)), reverse=True):
+        if not _shares_numbered_placeholder(item):
+            continue
+        if item.type in {EntityType.ORGANISATION, EntityType.COMPANY_NAME} and is_bare_uyap_word(
+            item.text
+        ):
+            continue
+        if _surface_repeat_pattern(item.text) is None:
+            continue
+        key = (
+            item.type.value,
+            fold_tr_identity("".join(collapse_name(strip_possessive(item.text)).split())),
+        )
+        if not key[1] or key in seen:
+            continue
+        seen.add(key)
+        prototypes.append(item)
+    if not prototypes:
+        return []
+
+    found: list[EntityCandidate] = []
+    covered = list(seeds)
+    for page in pages:
+        for prototype in prototypes:
+            pattern = _surface_repeat_pattern(prototype.text)
+            if pattern is None:
+                continue
+            for match in pattern.finditer(page.text):
+                surface = strip_possessive(match.group(0))
+                local_start = match.start()
+                local_end = local_start + len(surface)
+                start = page.document_offset + local_start
+                end = page.document_offset + local_end
+                if any(
+                    item.type == prototype.type and item.start <= start and end <= item.end
+                    for item in covered
+                ):
+                    continue
+                if any(item.type == prototype.type and item.start <= start and end <= item.end for item in found):
+                    continue
+                found.append(
+                    _inherit_scoring_provenance(
+                        EntityCandidate(
+                            text=page.text[local_start:local_end],
+                            type=prototype.type,
+                            start=start,
+                            end=end,
+                            page=page.page,
+                            detector=SURFACE_REPEAT,
+                            method=DetectionMethod.DETERMINISTIC,
+                            validated=True,
+                            role=prototype.role,
+                            reason="Later mention of a value already numbered in this document.",
+                            verification_level=VerificationLevel.REVIEW_RECOMMENDED,
+                            verification_method="surface_repeat",
+                            attributes={
+                                "source": "surface_repeat",
+                                "seed_text": prototype.text,
+                                "seed_detector": prototype.detector,
+                            },
+                        ),
+                        prototype,
+                    )
+                )
+    return found
+
+
+def propagate_organisation_repeats(
+    pages: list["PageText"],
+    seeds: list[EntityCandidate],
+) -> list[EntityCandidate]:
+    return propagate_detected_surface_repeats(pages, seeds)
+
+
+def _numbered_surface_key(item: EntityCandidate) -> tuple[str, str] | None:
+    if not _shares_numbered_placeholder(item):
+        return None
+    surface = fold_tr_identity("".join(collapse_name(strip_possessive(item.text)).split()))
+    if not surface:
+        return None
+    return item.type.value, surface
+
+
+def accept_repeated_numbered_surfaces(
+    candidates: list[EntityCandidate],
+) -> list[EntityCandidate]:
+    """A review-only copy of a value already accepted as X_1 becomes accepted too.
+
+    The review flag otherwise leaves that copy as the original word while the
+    accepted copy is shown as the numbered tag.
+    """
+    accepted: set[tuple[str, str]] = set()
+    for item in candidates:
+        if item.needs_review:
+            continue
+        if (item.attributes or {}).get("cited_authority_context"):
+            continue
+        if (item.attributes or {}).get("scoring_decision") == "IGNORE":
+            continue
+        key = _numbered_surface_key(item)
+        if key is not None:
+            accepted.add(key)
+    if not accepted:
+        return candidates
+    updated: list[EntityCandidate] = []
+    for item in candidates:
+        key = _numbered_surface_key(item)
+        if item.needs_review and key is not None and key in accepted:
+            attributes = dict(item.attributes or {})
+            attributes["scoring_decision"] = "ACCEPT"
+            attributes["accepted_with_surface"] = True
+            updated.append(
+                item.model_copy(update={"needs_review": False, "attributes": attributes})
+            )
+            continue
+        updated.append(item)
+    return updated

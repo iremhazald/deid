@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 
+from app.detectors.legal.repeats import _numbered_surface_key
 from app.detectors.registry import PageText
 from app.detectors.scoring.context import DocumentIndex
 from app.detectors.scoring.evaluate import attach_score, evaluate_candidate
@@ -334,27 +335,110 @@ def score_ner_candidates(
     return scored
 
 
+# Same cutoff as the ner_high_model_score bonus. A mention at or above this
+# is the detection the later copies reuse.
+_HIGH_MODEL_SCORE = 0.90
+
+
+def _model_score(entity: EntityCandidate) -> float | None:
+    raw = (entity.attributes or {}).get("ner_model_score")
+    try:
+        return float(raw) if raw is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _hard_blocked(scored: ScoredCandidate) -> bool:
+    return scored.hard_validation == HardValidation.INVALID or any(
+        item.hard_reject for item in scored.negative_evidence
+    )
+
+
+def _high_probability_anchor(entity: EntityCandidate, decision: ScoringDecision | None) -> bool:
+    """True when this mention is already the accepted high-probability detection."""
+    if (entity.attributes or {}).get("cited_authority_context"):
+        return False
+    if (entity.attributes or {}).get("scoring_decision") == "IGNORE":
+        return False
+    if decision is not None and decision != ScoringDecision.ACCEPT:
+        return False
+    if decision is None and entity.needs_review:
+        return False
+    score = _model_score(entity)
+    return score is None or score >= _HIGH_MODEL_SCORE
+
+
+def _inherit_surface(entity: EntityCandidate, anchor: EntityCandidate) -> EntityCandidate:
+    """Keep this span, and give it the tag already assigned to the same word."""
+    attributes = dict(entity.attributes or {})
+    attributes["scoring_decision"] = ScoringDecision.ACCEPT.value
+    attributes["accepted_with_surface"] = True
+    anchor_score = (anchor.attributes or {}).get("evidence_score")
+    if anchor_score is not None:
+        attributes["evidence_score"] = anchor_score
+    return entity.model_copy(
+        update={
+            "type": anchor.type,
+            "needs_review": False,
+            "validated": True,
+            "attributes": attributes,
+        }
+    )
+
+
 def _score_ner_candidates_counted(
     pages: list[PageText],
     ner_candidates: list[EntityCandidate],
     existing: list[EntityCandidate],
 ) -> tuple[list[EntityCandidate], int, int, int]:
-    """Same scoring path as score_ner_candidates, plus decision counters."""
+    """Score NER spans once per word. Later copies reuse the accepted tag.
+
+    A high-probability mention is not scored again when the same words appear
+    later. Those spans keep the accepted type and decision.
+    """
     if not ner_candidates:
         return [], 0, 0, 0
     index = DocumentIndex.build(pages, list(existing) + list(ner_candidates))
+    evaluated = [(item, evaluate_candidate(item, index)) for item in ner_candidates]
+    anchors: dict[tuple[str, str], EntityCandidate] = {}
+    for item in existing:
+        if not _high_probability_anchor(item, None):
+            continue
+        key = _numbered_surface_key(item)
+        if key is not None:
+            anchors.setdefault(key, item)
+    for entity, scored in evaluated:
+        if not _high_probability_anchor(scored.entity, scored.decision):
+            continue
+        if _hard_blocked(scored):
+            continue
+        key = _numbered_surface_key(scored.entity)
+        if key is not None:
+            anchors.setdefault(key, scored.entity)
+
     accept = review = ignore = 0
     kept: list[EntityCandidate] = []
-    for item in ner_candidates:
-        evaluated = evaluate_candidate(item, index)
-        if evaluated.decision == ScoringDecision.ACCEPT:
+    for entity, scored in evaluated:
+        key = _numbered_surface_key(entity)
+        anchor = anchors.get(key) if key is not None else None
+        same_span = (
+            anchor is not None
+            and anchor.page == entity.page
+            and anchor.start == entity.start
+            and anchor.end == entity.end
+        )
+        if anchor is not None and not same_span and not _hard_blocked(scored):
+            kept.append(_inherit_surface(entity, anchor))
             accept += 1
-        elif evaluated.decision == ScoringDecision.REVIEW:
+            continue
+        if scored.decision == ScoringDecision.ACCEPT:
+            accept += 1
+            kept.append(attach_score(scored.entity, scored))
+        elif scored.decision == ScoringDecision.REVIEW:
             review += 1
+            kept.append(attach_score(scored.entity, scored))
         else:
             ignore += 1
-        if evaluated.decision != ScoringDecision.IGNORE:
-            kept.append(attach_score(evaluated.entity, evaluated))
     return kept, accept, review, ignore
 
 
@@ -443,6 +527,20 @@ def resolve_ner_with_existing(
             EntityType.PERSON_NAME,
             EntityType.LAWYER_NAME,
             EntityType.JUDGE_NAME,
+            EntityType.PROSECUTOR_NAME,
+            EntityType.COURT_CLERK_NAME,
+            EntityType.VICTIM_NAME,
+            EntityType.COMPLAINANT_NAME,
+            EntityType.SUSPECT_NAME,
+            EntityType.ACCUSED_NAME,
+            EntityType.COMPLAINANT_ACCUSED_NAME,
+            EntityType.INTERVENOR_NAME,
+            EntityType.LEGAL_REPRESENTATIVE_NAME,
+            EntityType.MEDIATOR_NAME,
+            EntityType.INTERPRETER_NAME,
+            EntityType.ENFORCEMENT_OFFICER_NAME,
+            EntityType.NOTARY_NAME,
+            EntityType.ARBITRATOR_NAME,
             EntityType.CLAIMANT_NAME,
             EntityType.DEFENDANT_NAME,
             EntityType.WITNESS_NAME,

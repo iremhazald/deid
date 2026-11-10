@@ -5,7 +5,6 @@ import {
   findManualById,
   isActionableFinding,
   manualItemId,
-  relatedEntityIds,
   restoreStrategyFor,
   usesPaperRedaction,
 } from "../../state/helpers";
@@ -196,8 +195,8 @@ export function ReviewWorkspace(props: Props) {
   }, [analysis.job_id, analysis.workspace_mode]);
 
   const analysisStatus = analysisStatusOf(analysis);
-  const extraWarnings = analysis.warnings.filter(
-    (warning) => !warning.startsWith("AI_"),
+  const extraWarnings = (analysis.warnings ?? []).filter(
+    (warning) => warning !== "UDF_TEXT_ONLY" && !warning.startsWith("AI_"),
   );
   const pdfDocumentWorkspace = showsPdfPageViewer(
     analysis.document_kind,
@@ -293,6 +292,7 @@ export function ReviewWorkspace(props: Props) {
   const selectFromPanel = (id: string | null, rectIndex = 0) => {
     markInspected(id, rectIndex);
     if (!id) return;
+    viewPinned.current = false;
     setViewMode("detections");
     const entity = analysis.entities.find((item) => item.id === id);
     if (
@@ -492,16 +492,9 @@ export function ReviewWorkspace(props: Props) {
   const mergeFromPanel = async (entityIds: string[]) => {
     const source = analysis.entities.find((item) => item.id === entityIds[0]);
     const target = analysis.entities.find((item) => item.id === entityIds[1]);
-    const typesOf = (id: string) =>
-      relatedEntityIds(id, analysis.entities)
-        .map(
-          (related) =>
-            analysis.entities.find((item) => item.id === related)?.type,
-        )
-        .filter((type): type is string => Boolean(type));
     const conflict =
       source && target && isMergeType(source.type) && source.type !== "ADDRESS"
-        ? personMergeRoleConflict(typesOf(source.id), typesOf(target.id))
+        ? personMergeRoleConflict([source.type], [target.type])
         : false;
     await props.onMergeMatch?.(entityIds);
     setManualMergeSourceId(null);
@@ -906,12 +899,16 @@ export function ReviewWorkspace(props: Props) {
           onAddCustomTerm={props.onAddCustomTerm}
           onMergeMatch={props.onMergeMatch}
           onKeepSeparateMatch={props.onKeepSeparateMatch}
-          onReclassify={props.onReclassify}
+          onReclassify={(entityId, entityType) => {
+            setMergeNotice(null);
+            return props.onReclassify?.(entityId, entityType);
+          }}
           onRemoveFindings={removeFindings}
           showPreserved={showPreserved}
           onShowPreservedChange={(show) => {
             setShowPreserved(show);
-            setViewMode("detections");
+            if (viewPinned.current) return;
+            if (show) setViewMode("detections");
           }}
           manualMergeSourceId={manualMergeSourceId}
           onCancelManualMerge={cancelManualMerge}

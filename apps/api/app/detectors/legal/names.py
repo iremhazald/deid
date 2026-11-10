@@ -40,7 +40,9 @@ _POSSESSIVE = re.compile(
 _NAME_STOP = frozenset(
     {
         "ve",
+        "hem",
         "ile",
+        "cd",
         "olan",
         "olarak",
         "adına",
@@ -96,6 +98,13 @@ _NAME_STOP = frozenset(
         "karar",
         "kararı",
         "karari",
+        "tespit",
+        "tespiti",
+        "isteyen",
+        "istemlidir",
+        "istemli",
+        "delil",
+        "ekler",
         "gerekçe",
         "gerekce",
         "hüküm",
@@ -171,6 +180,10 @@ _NAME_STOP = frozenset(
         "avukat",
         "hakim",
         "hâkim",
+        "savcı",
+        "savci",
+        "kâtip",
+        "katip",
         "yargıç",
         "yargic",
         "sanık",
@@ -187,6 +200,23 @@ _NAME_STOP = frozenset(
         "musteki",
         "mağdur",
         "magdur",
+        "şüpheli",
+        "supheli",
+        "şikayetçi",
+        "şikâyetçi",
+        "sikayetci",
+        "müdahil",
+        "mudahil",
+        "arabulucu",
+        "tercüman",
+        "tercuman",
+        "çevirmen",
+        "cevirmen",
+        "noter",
+        "hakem",
+        "vasi",
+        "kayyım",
+        "kayyim",
         "vekil",
         "müdafi",
         "mudafi",
@@ -364,8 +394,22 @@ _INFLECTED_SUFFIXES = (
     "mesine",
     "masi",
     "mesi",
+    "diginden",
+    "dugunden",
+    "dugundan",
+    "tiginden",
     "digini",
     "digi",
+    "larla",
+    "lerle",
+    "iyla",
+    "iyle",
+    "uyla",
+    "uyle",
+    "inca",
+    "ince",
+    "unca",
+    "unce",
     "makta",
     "mekte",
     "lüğü",
@@ -600,6 +644,15 @@ def is_non_person_surface(value: str) -> bool:
     if is_workplace_or_job_title(value):
         return True
     folded = _ascii_fold(value)
+    caption = re.sub(r"\s+", " ", folded).strip(" .-")
+    if caption in {
+        "tespit isteyen",
+        "delil tespiti isteyen",
+        "delil tespiti istemlidir",
+        "delil tespiti istemli",
+        "delil tespiti",
+    }:
+        return True
     # Procedural labels only as whole words — "konutları" must not match "konu".
     if re.search(r"(?<!\w)(?:konu|hukuku)(?!\w)", folded):
         return True
@@ -637,6 +690,34 @@ def _is_place(token: str) -> bool:
     return folded in _PLACE_FOLD or folded_raw in _PLACE_FOLD
 
 
+# Stems of legal prose that must never become a person token. Bare "İlke"
+# stays available because it is also a given name; only the inflected form
+# (ilkesi, ilkesine) is rejected.
+_LEGAL_COMMON_STEMS = (
+    "yararlan",
+    "tutanak",
+    "cozum",
+    "delil",
+    "anlat",
+    "teknik",
+    "gereg",
+    "baro",
+)
+_INFLECTED_NAME_STEMS = ("ilke",)
+
+
+def _is_legal_common_token(token: str) -> bool:
+    ascii_folded = _ascii_fold(token)
+    if not ascii_folded:
+        return False
+    if any(ascii_folded.startswith(stem) for stem in _LEGAL_COMMON_STEMS):
+        return True
+    return any(
+        ascii_folded.startswith(stem) and len(ascii_folded) > len(stem)
+        for stem in _INFLECTED_NAME_STEMS
+    )
+
+
 def _is_org_abbrev(token: str) -> bool:
     folded = _fold_token(token)
     return folded in {
@@ -665,7 +746,7 @@ def _token_ok(token: str) -> bool:
         return False
     if _is_workplace_token(bare) or is_legal_role_label(bare):
         return False
-    if _is_org_abbrev(bare):
+    if _is_org_abbrev(bare) or _is_legal_common_token(bare):
         return False
     if _looks_inflected(bare):
         return False
@@ -719,6 +800,35 @@ def take_person_name(raw: str) -> tuple[str, int, int] | None:
     return " ".join(names), lead, trail
 
 
+def is_bare_uyap_word(value: str) -> bool:
+    """True when the whole surface is the word UYAP, not a host or access line."""
+    compact = re.sub(r"[^0-9a-z]", "", fold_tr_identity(value or ""))
+    return compact == "uyap"
+
+
+def clip_name_beside_role(
+    raw: str, raw_start: int, *, before_role: bool
+) -> tuple[str, int, int] | None:
+    """Keep only the name tokens that sit against the role word.
+
+    Reading starts at the role and stops at the first word that is not a
+    name. A legal formula is therefore dropped whole, instead of being
+    trimmed until an adjective in the middle is left looking like a surname.
+    """
+    pieces = [(match.group(0), match.start(), match.end()) for match in re.finditer(r"\S+", raw)]
+    ordered = list(reversed(pieces)) if before_role else pieces
+    kept: list[tuple[str, int, int]] = []
+    for token, start, end in ordered:
+        if not _token_ok(strip_possessive(token)):
+            break
+        kept.append((token, start, end))
+    if before_role:
+        kept.reverse()
+    if not 2 <= len(kept) <= 4:
+        return None
+    return clipped_name_span(raw[kept[0][1] : kept[-1][2]], raw_start + kept[0][1])
+
+
 def clipped_name_span(raw: str, raw_start: int) -> tuple[str, int, int] | None:
     taken = take_person_name(raw)
     if taken is None:
@@ -756,12 +866,14 @@ __all__ = [
     "BARE_NAME_TOKEN",
     "NAME_TOKEN",
     "PERSON_NAME_RE",
+    "clip_name_beside_role",
     "clipped_name_span",
     "collapse_name",
     "first_person_span",
     "is_isolated_letter_person_surface",
     "is_isolated_uppercase_fragment",
     "is_legal_role_label",
+    "is_bare_uyap_word",
     "is_non_person_surface",
     "is_plausible_person_name",
     "is_procedural_notice_surface",

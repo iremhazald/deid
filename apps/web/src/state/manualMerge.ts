@@ -7,6 +7,20 @@ const ROLE_FAMILIES: Record<string, string> = {
   DEFENDANT_NAME: 'DEFENDANT',
   LAWYER_NAME: 'LAWYER',
   JUDGE_NAME: 'JUDGE',
+  PROSECUTOR_NAME: 'PROSECUTOR',
+  COURT_CLERK_NAME: 'COURT_CLERK',
+  VICTIM_NAME: 'VICTIM',
+  COMPLAINANT_NAME: 'COMPLAINANT',
+  SUSPECT_NAME: 'SUSPECT',
+  ACCUSED_NAME: 'ACCUSED',
+  COMPLAINANT_ACCUSED_NAME: 'COMPLAINANT_ACCUSED',
+  INTERVENOR_NAME: 'INTERVENOR',
+  LEGAL_REPRESENTATIVE_NAME: 'LEGAL_REPRESENTATIVE',
+  MEDIATOR_NAME: 'MEDIATOR',
+  INTERPRETER_NAME: 'INTERPRETER',
+  ENFORCEMENT_OFFICER_NAME: 'ENFORCEMENT_OFFICER',
+  NOTARY_NAME: 'NOTARY',
+  ARBITRATOR_NAME: 'ARBITRATOR',
   WITNESS_NAME: 'WITNESS',
   EXPERT_NAME: 'EXPERT',
 }
@@ -148,9 +162,12 @@ export function explicitRoleFamilies(types: Iterable<string>): string[] {
   return [...new Set([...types].map((type) => ROLE_FAMILIES[type]).filter((family): family is string => Boolean(family)))]
 }
 
+const DUAL_PARTY_FAMILIES = new Set(['COMPLAINANT', 'ACCUSED', 'COMPLAINANT_ACCUSED'])
+
 /** Mirrors backend resolve_person_family: two distinct explicit roles conflict. */
 export function personMergeRoleConflict(sourceTypes: Iterable<string>, targetTypes: Iterable<string>): boolean {
   const roles = new Set([...explicitRoleFamilies(sourceTypes), ...explicitRoleFamilies(targetTypes)])
+  if (roles.size > 1 && [...roles].every((role) => DUAL_PARTY_FAMILIES.has(role))) return false
   return roles.size > 1
 }
 

@@ -10,7 +10,7 @@ from app.detectors.gazetteers import (
     TURKISH_DISTRICTS,
     TURKISH_INSTITUTIONS,
 )
-from app.detectors.textutil import fold_tr
+from app.detectors.textutil import fold_tr, fold_tr_identity
 from app.detectors.registry import PageText, _candidate
 from app.domain.models import DetectionMethod, EntityCandidate, EntityType
 
@@ -111,7 +111,7 @@ _ROLE_TITLE = (
 )
 _BARE_ROLE_TOKEN = r"[A-ZÇĞİÖŞÜÂÎÛ][A-Za-zÇĞİÖŞÜçğıöşüÂÎÛâîû]+"
 # The name stops before an apostrophe. "Yılmaz'ın" labels "Yılmaz"; "'ın" stays visible.
-_ROLE_NAME = rf"((?:{_BARE_ROLE_TOKEN}\s+){{1,3}}{_BARE_ROLE_TOKEN})"
+_ROLE_NAME = rf"(?P<name>(?:{_BARE_ROLE_TOKEN}\s+){{1,3}}{_BARE_ROLE_TOKEN})"
 _ROLE_TITLE_CHAIN = rf"(?:{_ROLE_TITLE}\s*){{1,3}}"
 LEGAL_ROLE_PREFIX = re.compile(
     rf"(?<![\wÇĞİÖŞÜçğıöşü])(?P<head>{_ROLE_TITLE_CHAIN}){_ROLE_NAME}"
@@ -204,24 +204,39 @@ def detect_turkish_advanced(page: PageText) -> Iterable[EntityCandidate]:
     for match in LEGAL_ROLE_PREFIX.finditer(page.text):
         title = match.group("head")
         role_type = fold_tr(re.sub(r"[.\s]+", "", title))
+        identity = fold_tr_identity(re.sub(r"[.\s]+", "", title))
         entity_type = EntityType.PERSON_NAME
         role = None
+        # Prosecutor and clerk labels stay outside the person span.
+        name_only = False
         if role_type.startswith("av") or "avukat" in role_type or "mudafi" in role_type:
+            before = fold_tr_identity(page.text[max(0, match.start() - 16) : match.start()])
+            # "Arabulucu Avukat" is the mediator role, not counsel.
+            if "arabulucu" in before:
+                continue
             entity_type = EntityType.LAWYER_NAME
             role = "COUNSEL"
         elif any(token in role_type for token in ("hakim", "yargic", "yargıç", "baskan", "uye")):
             entity_type = EntityType.JUDGE_NAME
             role = "JUDGE"
-        elif "savci" in role_type:
-            entity_type = EntityType.PERSON_NAME
+        elif "savci" in identity:
+            entity_type = EntityType.PROSECUTOR_NAME
             role = "PROSECUTOR"
-        elif "katip" in role_type:
-            entity_type = EntityType.PERSON_NAME
+            name_only = True
+        elif "katip" in identity:
+            entity_type = EntityType.COURT_CLERK_NAME
             role = "CLERK"
+            name_only = True
         elif "bilirkisi" in role_type or "bilirkişi" in role_type:
             entity_type = EntityType.EXPERT_NAME
 
-        candidate = _candidate(page, match, entity_type, "TR_LEGAL_ROLE_NAME", group=0)
+        candidate = _candidate(
+            page,
+            match,
+            entity_type,
+            "TR_LEGAL_ROLE_NAME",
+            group="name" if name_only else 0,
+        )
         if role:
             candidate = candidate.model_copy(update={"role": role})
         yield candidate

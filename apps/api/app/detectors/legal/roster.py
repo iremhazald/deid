@@ -23,8 +23,12 @@ _LINE_NAME = re.compile(
 )
 _FOOTER_ID = re.compile(
     r"(?i)(?<!\w)(?P<label>başkan|baskan|üye|uye|hâkim|hakim|yargıç|yargic|"
-    r"kâtip|katip|c\s*\.?\s*savc[iıIİ]s[iıIİ]|"
-    r"cumhur[iıIİ]yet\s+savc[iıIİ]s[iıIİ]|savc[iıIİ])"
+    r"k[âaÂA]t[iıIİ]p|c\s*\.?\s*savc[iıIİ]s[iıIİ]|"
+    r"cumhur[iıIİ]yet\s+savc[iıIİ]s[iıIİ]|"
+    r"duru[şsŞS]ma\s+savc[iıIİ]s[iıIİ]|"
+    r"zab[ıiIİ]t\s+k[âaÂA]t[iıIİ]p|"
+    r"mahkeme\s+k[âaÂA]t[iıIİ]p|"
+    r"savc[iıIİ])"
     r"\s+(?P<reg>\d{5,6})\b"
 )
 

@@ -4,6 +4,13 @@ All notable changes and improvements to the DeID LegalTech platform.
 
 ## [Unreleased]
 
+- Eleven legal-role person labels were added to the existing schema: victim,
+  complainant, suspect, accused, intervenor, legal representative, mediator,
+  interpreter, enforcement officer, notary, and arbitrator. `sanık` is
+  `ACCUSED_NAME`. `davalı` stays `DEFENDANT_NAME`. `müşteki` stays separate
+  from `CLAIMANT_NAME`. A role word without a name is not a person finding.
+  Detection still depends on the document context and does not guarantee that
+  every role mention is found or correctly classified.
 - CI now scores the product rules-only path. On this gold set that measurement
   is 90.83% precision and 76.22% recall, against 86.17% and 76.22% on the
   legacy path. Recall is unchanged. The precision difference is the product

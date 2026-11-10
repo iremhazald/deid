@@ -22,7 +22,7 @@ detection.
 - **Turkish and English legal documents** — Deterministic detectors for legal
   roles, structured identifiers, courts, addresses, and document references in
   both Turkish and English legal contexts
-- **47 entity types** — People, legal roles, government IDs, contact information,
+- **58 entity types** — People, legal roles, government IDs, contact information,
   financial identifiers, legal references, addresses, organisations, and dates
 - **Local NER** — Turkish BERTurk and English spaCy models run on-device as
   supplementary candidate generators

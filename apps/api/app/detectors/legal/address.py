@@ -14,7 +14,7 @@ _MARKERS: tuple[tuple[str, str], ...] = (
     (r"mahallesi|mahalle|mah\.?", "mah"),
     (r"caddesi|cadde|cad\.?|cd\.?", "cad"),
     (r"sokağı|sokagi|sokak|sok\.?|sk\.?", "sok"),
-    (r"bulvarı|bulvari|bul\.?", "bul"),
+    (r"bulvarı|bulvari|bul\.?|blv\.?", "bul"),
     (r"küme\s+evleri|kume\s+evleri", "kume"),
     (r"mevkii|mevki", "mevki"),
     (r"sitesi", "site"),
@@ -46,7 +46,8 @@ _IDENTITY_NO_PREFIX = re.compile(
     r"(?i)(?:t\.?\s*c\.?\s*)?(?:kimlik|tckn|vergi|vkn|sicil)\s*$",
 )
 _PREFIX_NAME = re.compile(
-    r"((?:\d{1,3}\.\s*)?[A-ZÇĞİÖŞÜÂÎÛ][A-Za-zÇĞİÖŞÜçğıöşüâîû0-9]+"
+    r"((?:\d{1,3}\.\s*[A-ZÇĞİÖŞÜÂÎÛ][A-Za-zÇĞİÖŞÜçğıöşüâîû0-9]+,\s+)?"
+    r"(?:\d{1,3}\.\s*)?[A-ZÇĞİÖŞÜÂÎÛ][A-Za-zÇĞİÖŞÜçğıöşüâîû0-9]+"
     r"(?:\s+[A-ZÇĞİÖŞÜÂÎÛ][A-Za-zÇĞİÖŞÜçğıöşüâîû0-9]+){0,2})\s*$",
 )
 _CITY_RE = re.compile(

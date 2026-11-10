@@ -22,6 +22,7 @@ from app.detectors.legal.identifier_repeats import (
 )
 from app.detectors.legal.repeats import DETECTOR_NAME as NAME_REPEAT
 from app.detectors.legal.repeats import pair_adjacent_person_name_tokens
+from app.detectors.legal.repeats import propagate_party_title_repeats
 from app.detectors.legal.repeats import propagate_person_name_repeats
 from app.detectors.verification import apply_verification
 from app.domain.models import DetectionMethod, EntityCandidate, EntityType, VerificationLevel
@@ -474,6 +475,9 @@ def run_detectors(
     repeats = propagate_person_name_repeats(pages, merged)
     if repeats:
         merged = merge_rule_candidates(merged + repeats)
+    titles = propagate_party_title_repeats(pages, merged)
+    if titles:
+        merged = merge_rule_candidates(merged + titles)
     identifiers = propagate_identifier_repeats(pages, merged)
     if identifiers:
         merged = merge_rule_candidates(merged + identifiers)

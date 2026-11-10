@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from app.detectors.legal.merge import detector_rank
+from app.detectors.legal.merge import _COMPANY_SUFFIX_KEEP, detector_rank
 from app.domain.models import EntityType
 
 from app.detectors.scoring.models import HardValidation, ScoredCandidate, ScoringDecision
@@ -15,6 +15,20 @@ _PERSON = {
     EntityType.LAST_NAME,
     EntityType.ALIAS,
     EntityType.JUDGE_NAME,
+    EntityType.PROSECUTOR_NAME,
+    EntityType.COURT_CLERK_NAME,
+    EntityType.VICTIM_NAME,
+    EntityType.COMPLAINANT_NAME,
+    EntityType.SUSPECT_NAME,
+    EntityType.ACCUSED_NAME,
+    EntityType.COMPLAINANT_ACCUSED_NAME,
+    EntityType.INTERVENOR_NAME,
+    EntityType.LEGAL_REPRESENTATIVE_NAME,
+    EntityType.MEDIATOR_NAME,
+    EntityType.INTERPRETER_NAME,
+    EntityType.ENFORCEMENT_OFFICER_NAME,
+    EntityType.NOTARY_NAME,
+    EntityType.ARBITRATOR_NAME,
     EntityType.LAWYER_NAME,
     EntityType.CLAIMANT_NAME,
     EntityType.DEFENDANT_NAME,
@@ -23,6 +37,7 @@ _PERSON = {
 }
 
 _ORG = {EntityType.ORGANISATION, EntityType.COMPANY_NAME, EntityType.COURT_NAME}
+_PARTY_TITLE = {EntityType.CLAIMANT_NAME, EntityType.DEFENDANT_NAME}
 _LEGAL_REF = {
     EntityType.CASE_NUMBER,
     EntityType.FILE_NUMBER,
@@ -36,6 +51,16 @@ _NUMERIC_LOSER = {
     EntityType.PORT_NUMBER,
     EntityType.OTHER_IDENTIFIER,
 }
+
+
+def _party_title_owns_company(title: ScoredCandidate, company: ScoredCandidate) -> bool:
+    """A davacı or davalı trade name keeps its party label over a generic company tag."""
+    return (
+        title.type in _PARTY_TITLE
+        and company.type == EntityType.COMPANY_NAME
+        and _contains(title, company)
+        and bool(_COMPANY_SUFFIX_KEEP.search(title.entity.text))
+    )
 
 
 def _overlaps(left: ScoredCandidate, right: ScoredCandidate) -> bool:
@@ -100,6 +125,9 @@ def resolve_scored(candidates: list[ScoredCandidate]) -> list[ScoredCandidate]:
                     reason = "inside_tckn"
                     break
             if other.type in _ORG and item.type in _PERSON:
+                if _party_title_owns_company(item, other):
+                    kept = [kept_item for kept_item in kept if kept_item.entity.id != other.entity.id]
+                    continue
                 drop = True
                 reason = "institution_suppresses_person"
                 break
@@ -157,6 +185,10 @@ def resolve_scored(candidates: list[ScoredCandidate]) -> list[ScoredCandidate]:
                 item.conflict_reason = "docket_label_not_court"
                 continue
         if item.type in _ORG:
+            if any(_party_title_owns_company(other, item) for other in kept):
+                item.decision = ScoringDecision.IGNORE
+                item.conflict_reason = "party_title_precedes_company"
+                continue
             survivors: list[ScoredCandidate] = []
             for other in kept:
                 if other.type in _PERSON and _overlaps(item, other):

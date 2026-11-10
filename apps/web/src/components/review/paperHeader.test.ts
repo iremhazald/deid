@@ -31,6 +31,15 @@ describe("paperHeaderRanges", () => {
     );
   });
 
+  it("leaves a petition title that is only a court name", () => {
+    const title = "MERSİN 23. ASLİYE CEZA MAHKEMESİ\nDOSYA NO : 2026/111 Esas\nKONU";
+    const entity = {
+      ...court(0, title.indexOf("\n"), title.slice(0, title.indexOf("\n"))),
+      attributes: {},
+    };
+    expect(paperHeaderRanges(title, [entity])).toEqual([]);
+  });
+
   it("leaves the body line outside the mask", () => {
     const entity = court(0, 10, header.slice(0, 10));
     const [, end] = paperHeaderRanges(header, [entity])[0];

@@ -78,7 +78,7 @@ Mapped to the existing entity catalog.
 
 | Category | Detector(s) | Notes |
 |----------|-------------|-------|
-| PERSON_NAME / LAWYER_NAME / JUDGE_NAME / EXPERT_NAME | `EN_ROLE_PERSON`, `EN_LEGAL_PARTY`, `EN_TITLED_PERSON`, `EN_SIGNATURE_PERSON`, `EN_NARRATIVE_PERSON` | Role is evidence only |
+| PERSON_NAME / LAWYER_NAME / JUDGE_NAME / PROSECUTOR_NAME / COURT_CLERK_NAME / VICTIM_NAME / COMPLAINANT_NAME / SUSPECT_NAME / ACCUSED_NAME / INTERVENOR_NAME / LEGAL_REPRESENTATIVE_NAME / MEDIATOR_NAME / INTERPRETER_NAME / ENFORCEMENT_OFFICER_NAME / NOTARY_NAME / ARBITRATOR_NAME / EXPERT_NAME | `EN_ROLE_PERSON`, `EN_LEGAL_PARTY`, `EN_TITLED_PERSON`, `EN_SIGNATURE_PERSON`, `EN_NARRATIVE_PERSON` | A role label next to a name can select the role-specific type. A bare word such as defendant, party, representative, clerk, or referee does not |
 | COMPANY_NAME | `EN_COMPANY_SUFFIX` | Suffix grammar |
 | ORGANISATION | `EN_ORGANISATION` | Institution phrases |
 | COURT_NAME | `EN_COURT` | No country inferred |
