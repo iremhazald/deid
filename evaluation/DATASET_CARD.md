@@ -206,21 +206,33 @@ move came from the gold set or from the system.
 | After the Turkish relabel | 88.30% | 68.03% | 122 gold spans | Gold. Detectors, rules, and thresholds did not change. |
 | After the three `SALARY_INFORMATION` labels left `tr-salary-001` | 88.30% | 69.75% | 83 true positives, 11 false positives, 36 false negatives | Gold scope. The amounts stayed in the text. Removing the salary type from the program did not move the harness. |
 | Legacy harness on the current 62 Turkish documents | 86.17% | 76.22% | 218 / 35 / 68 | Gold. The harness was the previous detector list. |
-| Product rules-only path, current CI | 90.83% | 76.22% | 218 / 22 / 68 | Measurement. Recall is the same. The precision move is the product merge dropping false positives. |
+| Product rules-only path, 22 October | 90.83% | 76.22% | 218 / 22 / 68 | Measurement. Recall is the same. The precision move is the product merge dropping false positives. |
+| After the 11 November detector changes | 87.35% | 77.27% | 221 / 32 / 65 | System. The gold file did not change. |
 
 On the 34-document set, after the salary labels were removed, the ungated
 person-family match was precision 89.36% and recall 70.59% (84 / 10 / 35).
-On the product rules-only path the ungated Turkish person-family match is
-precision 93.75% and recall 78.67%.
+On the 22 October product path the ungated Turkish person-family match was
+precision 93.75% and recall 78.67%. After the 11 November detectors it is
+precision 94.86% and recall 83.92% (240 / 13 / 46). That move is the system.
+
+The same gold file, split by `dev` and `test`, shows where that system change
+landed. Turkish test strict precision moved from 90.48% to 93.10% and recall
+from 80.00% to 85.26% (76 / 8 / 19 to 81 / 6 / 14). Turkish dev strict
+precision moved from 91.03% to 84.34% and recall from 74.35% to 73.30%
+(142 / 14 / 49 to 140 / 26 / 51). The test split improved on both precision
+and recall. The dev precision drop is extra false positives.
 
 The sentence-final email change is a system change. On the 34-document set
 the legacy numbers stayed 88.30% precision and 69.75% recall, because that
 set has no address at the end of a sentence. Turkish email recall on the
 current product path is 25/25.
 
-English on the product rules-only path, report only: precision 73.33%, recall
-41.02% (121 true positives, 44 false positives, 174 false negatives).
-Person-family precision 86.06%, recall 48.14%. Email recall is 100% (37).
+English on the product rules-only path, report only, after the 11 November
+detectors: precision 72.89%, recall 41.02% (121 true positives, 45 false
+positives, 174 false negatives). Person-family precision 86.14%, recall
+48.47% (143 / 23 / 152). Against the 22 October path, strict recall is
+unchanged and there is one more false positive; person-family recall gained
+one true positive. Those moves are the system. Email recall is 100% (37).
 Phone recall is 0% (0/35). IBAN recall is 77.42% (24/31). National-id recall
 is 60% (6/10). Those six counted hits are the phrase "national identifier"
 followed by an area-666 number. The rule takes "national id" as a prefix of
