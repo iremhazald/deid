@@ -16,7 +16,7 @@ from app.detectors.legal.names import (
 from app.detectors.legal.address import parse_address_tokens
 from app.detectors.legal.organisation import leading_company_span, parse_companies
 from app.detectors.legal.parentage import parse_parentage
-from app.detectors.legal.roles import party_label_pattern, resolve_party
+from app.detectors.legal.roles import contextualize_role, party_label_pattern, resolve_party
 from app.detectors.registry import PageText
 from app.domain.models import EntityCandidate, EntityType
 
@@ -71,7 +71,9 @@ def _block_end(text: str, value_start: int) -> int:
 def parse_party_blocks(page: PageText) -> list[EntityCandidate]:
     found: list[EntityCandidate] = []
     for opener in _OPEN.finditer(page.text):
-        role, entity_type = resolve_party(opener.group(1))
+        role, entity_type = contextualize_role(
+            opener.group(1), *resolve_party(opener.group(1)), page.text
+        )
         value_start = opener.end()
         value_end = _block_end(page.text, value_start)
         trade_end = _trade_name_end(page.text, value_start)

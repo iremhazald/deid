@@ -49,8 +49,8 @@ PARTY_ROLES: tuple[tuple[str, str, EntityType], ...] = (
     ("musteki sanik", "COMPLAINANT_ACCUSED", EntityType.COMPLAINANT_ACCUSED_NAME),
     ("müşteki-şüpheli", "COMPLAINANT", EntityType.COMPLAINANT_NAME),
     ("musteki-supheli", "COMPLAINANT", EntityType.COMPLAINANT_NAME),
-    ("katılan müşteki", "INTERVENOR", EntityType.INTERVENOR_NAME),
-    ("katilan musteki", "INTERVENOR", EntityType.INTERVENOR_NAME),
+    ("katılan müşteki", "VICTIM", EntityType.VICTIM_NAME),
+    ("katilan musteki", "VICTIM", EntityType.VICTIM_NAME),
     ("suç mağduru", "VICTIM", EntityType.VICTIM_NAME),
     ("suc magduru", "VICTIM", EntityType.VICTIM_NAME),
     ("mağdur çocuk", "VICTIM", EntityType.VICTIM_NAME),
@@ -71,10 +71,10 @@ PARTY_ROLES: tuple[tuple[str, str, EntityType], ...] = (
     ("saniklar", "ACCUSED", EntityType.ACCUSED_NAME),
     ("sanık", "ACCUSED", EntityType.ACCUSED_NAME),
     ("sanik", "ACCUSED", EntityType.ACCUSED_NAME),
-    ("katılanlar", "INTERVENOR", EntityType.INTERVENOR_NAME),
-    ("katilanlar", "INTERVENOR", EntityType.INTERVENOR_NAME),
-    ("katılan", "INTERVENOR", EntityType.INTERVENOR_NAME),
-    ("katilan", "INTERVENOR", EntityType.INTERVENOR_NAME),
+    ("katılanlar", "VICTIM", EntityType.VICTIM_NAME),
+    ("katilanlar", "VICTIM", EntityType.VICTIM_NAME),
+    ("katılan", "VICTIM", EntityType.VICTIM_NAME),
+    ("katilan", "VICTIM", EntityType.VICTIM_NAME),
     ("davacılar", "CLAIMANT", EntityType.CLAIMANT_NAME),
     ("davacı", "CLAIMANT", EntityType.CLAIMANT_NAME),
     ("davalılar", "RESPONDENT", EntityType.DEFENDANT_NAME),
@@ -94,6 +94,10 @@ PARTY_ROLES: tuple[tuple[str, str, EntityType], ...] = (
     ("borçlu", "DEBTOR", EntityType.PERSON_NAME),
     ("alacaklı", "CREDITOR", EntityType.PERSON_NAME),
     ("başvurucu", "APPLICANT", EntityType.PERSON_NAME),
+    ("fer'i müdahil", "INTERVENOR", EntityType.INTERVENOR_NAME),
+    ("fer’i müdahil", "INTERVENOR", EntityType.INTERVENOR_NAME),
+    ("feri müdahil", "INTERVENOR", EntityType.INTERVENOR_NAME),
+    ("feri mudahil", "INTERVENOR", EntityType.INTERVENOR_NAME),
     ("müdahil", "INTERVENOR", EntityType.INTERVENOR_NAME),
     ("mudahil", "INTERVENOR", EntityType.INTERVENOR_NAME),
     ("kanuni temsilci", "LEGAL_REPRESENTATIVE", EntityType.LEGAL_REPRESENTATIVE_NAME),
@@ -172,8 +176,8 @@ PERSON_TRIGGERS: tuple[tuple[str, str, EntityType], ...] = (
     ("musteki sanik", "COMPLAINANT_ACCUSED", EntityType.COMPLAINANT_ACCUSED_NAME),
     ("müşteki-şüpheli", "COMPLAINANT", EntityType.COMPLAINANT_NAME),
     ("musteki-supheli", "COMPLAINANT", EntityType.COMPLAINANT_NAME),
-    ("katılan müşteki", "INTERVENOR", EntityType.INTERVENOR_NAME),
-    ("katilan musteki", "INTERVENOR", EntityType.INTERVENOR_NAME),
+    ("katılan müşteki", "VICTIM", EntityType.VICTIM_NAME),
+    ("katilan musteki", "VICTIM", EntityType.VICTIM_NAME),
     ("suç mağduru", "VICTIM", EntityType.VICTIM_NAME),
     ("suc magduru", "VICTIM", EntityType.VICTIM_NAME),
     ("mağdur çocuk", "VICTIM", EntityType.VICTIM_NAME),
@@ -194,10 +198,10 @@ PERSON_TRIGGERS: tuple[tuple[str, str, EntityType], ...] = (
     ("saniklar", "ACCUSED", EntityType.ACCUSED_NAME),
     ("sanık", "ACCUSED", EntityType.ACCUSED_NAME),
     ("sanik", "ACCUSED", EntityType.ACCUSED_NAME),
-    ("katılanlar", "INTERVENOR", EntityType.INTERVENOR_NAME),
-    ("katilanlar", "INTERVENOR", EntityType.INTERVENOR_NAME),
-    ("katılan", "INTERVENOR", EntityType.INTERVENOR_NAME),
-    ("katilan", "INTERVENOR", EntityType.INTERVENOR_NAME),
+    ("katılanlar", "VICTIM", EntityType.VICTIM_NAME),
+    ("katilanlar", "VICTIM", EntityType.VICTIM_NAME),
+    ("katılan", "VICTIM", EntityType.VICTIM_NAME),
+    ("katilan", "VICTIM", EntityType.VICTIM_NAME),
     ("müştekiler", "COMPLAINANT", EntityType.COMPLAINANT_NAME),
     ("mustekiler", "COMPLAINANT", EntityType.COMPLAINANT_NAME),
     ("müşteki", "COMPLAINANT", EntityType.COMPLAINANT_NAME),
@@ -210,6 +214,10 @@ PERSON_TRIGGERS: tuple[tuple[str, str, EntityType], ...] = (
     ("magdurlar", "VICTIM", EntityType.VICTIM_NAME),
     ("mağdur", "VICTIM", EntityType.VICTIM_NAME),
     ("magdur", "VICTIM", EntityType.VICTIM_NAME),
+    ("fer'i müdahil", "INTERVENOR", EntityType.INTERVENOR_NAME),
+    ("fer’i müdahil", "INTERVENOR", EntityType.INTERVENOR_NAME),
+    ("feri müdahil", "INTERVENOR", EntityType.INTERVENOR_NAME),
+    ("feri mudahil", "INTERVENOR", EntityType.INTERVENOR_NAME),
     ("müdahil", "INTERVENOR", EntityType.INTERVENOR_NAME),
     ("mudahil", "INTERVENOR", EntityType.INTERVENOR_NAME),
     ("kanuni temsilci", "LEGAL_REPRESENTATIVE", EntityType.LEGAL_REPRESENTATIVE_NAME),
@@ -417,6 +425,36 @@ def resolve_counsel(label: str) -> str:
         if fold_tr(name) == key:
             return role
     return "COUNSEL"
+
+
+_CRIMINAL_MUDAHIL = re.compile(
+    r"\bceza\b|sanik|savci|kamu davasi|agir ceza|asliye ceza"
+)
+_ASCII_TR = str.maketrans("çğıöşü", "cgiosu")
+
+
+def _ascii_fold(value: str) -> str:
+    return fold_tr_identity(value).translate(_ASCII_TR)
+
+
+def contextualize_role(
+    label: str,
+    role: str,
+    entity_type: EntityType,
+    text: str,
+) -> tuple[str, EntityType]:
+    """Müdahil in an older criminal text is the person who joined as katılan.
+
+    Fer'i müdahil stays the civil intervenor. Katılan itself is already
+    VICTIM_NAME. Attendance uses a separate exclusion.
+    """
+    folded = _ascii_fold(label).replace("'", "").replace("’", "")
+    folded = re.sub(r"\s+", " ", folded).strip()
+    if folded != "mudahil" or entity_type != EntityType.INTERVENOR_NAME:
+        return role, entity_type
+    if _CRIMINAL_MUDAHIL.search(_ascii_fold(text)):
+        return "VICTIM", EntityType.VICTIM_NAME
+    return role, entity_type
 
 
 def resolve_trigger(label: str) -> tuple[str, EntityType]:
