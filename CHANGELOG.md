@@ -17,6 +17,10 @@ All notable changes and improvements to the DeID LegalTech platform.
   recall from 80.77% to 80.40% (231 / 22 / 55 to 242 / 25 / 59). Detectors
   did not change. The three labeled English numbers are detected. The other
   35 English phone spans are still missed.
+- The residual check no longer reports a placeholder this export just wrote.
+  `[GİZLENDİ]`, `[REDACTED]`, and the tag tokens are not new findings. A name
+  that is still present is still reported. This covers the DOCX and UDF
+  text-copy exports.
 - The English national-id label no longer matches inside a longer word.
   "national identifier" is not read as "national id" plus the rest of the
   word. English national-id recall on this gold is 0/10, and Turkish scores

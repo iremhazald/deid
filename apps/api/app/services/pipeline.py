@@ -69,7 +69,12 @@ from app.services.document_processing import (
 )
 from app.services.udf_package import extract_udf_text
 from app.services.jobs import Job, SpanBox
-from app.transforms.copy_text import apply_copy_operations
+from app.transforms.copy_text import (
+    REDACT_COPY_TOKEN_EN,
+    REDACT_COPY_TOKEN_TR,
+    apply_copy_operations,
+)
+from app.transforms.tag_taxonomy import TAG_SPECS
 from app.transforms.planner import (
     apply_operations,
     build_operations,
@@ -1808,6 +1813,30 @@ def _kept_entities(
     return [entity for entity in entities if entity.id not in transformed]
 
 
+_OWN_REDACT_TOKENS = frozenset({REDACT_COPY_TOKEN_TR, REDACT_COPY_TOKEN_EN})
+_OWN_TAG_LABELS = frozenset(
+    label
+    for spec in TAG_SPECS.values()
+    for label in (spec.labels_tr, spec.labels_en)
+    if label
+)
+_PLACEHOLDER_EDGE = " \t\r\n.,;:!?\"'”’»"
+
+
+def _is_own_placeholder(text: str) -> bool:
+    """True when a rescan hit is a token this export just wrote."""
+    cleaned = text.strip(_PLACEHOLDER_EDGE)
+    if cleaned in _OWN_REDACT_TOKENS:
+        return True
+    if len(cleaned) < 3 or cleaned[0] != "[" or cleaned[-1] != "]":
+        return False
+    body = cleaned[1:-1]
+    label, separator, number = body.rpartition("_")
+    if separator and number.isdigit():
+        return label in _OWN_TAG_LABELS
+    return body in _OWN_TAG_LABELS
+
+
 async def _residual_checks(
     *,
     output_text: str,
@@ -1833,6 +1862,8 @@ async def _residual_checks(
     )
     residual_by_decision: dict[str, set[str]] = {"ACCEPT": set(), "REVIEW": set()}
     for candidate in output_candidates:
+        if _is_own_placeholder(candidate.text):
+            continue
         if candidate.type not in transformed_types:
             continue
         if output_counter[(candidate.type, candidate.text)] <= kept_counter.get(
