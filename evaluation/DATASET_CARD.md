@@ -225,6 +225,8 @@ move came from the gold set or from the system.
 | After the 11 November detector changes | 87.35% | 77.27% | 221 / 32 / 65 | System. The gold file did not change. |
 | After the approved role relabel | 91.30% | 80.77% | 231 / 22 / 55 | Gold. Detectors did not change. `MELTEM ARI` (`DAVACI`) was already `CLAIMANT_NAME` under the old rules. |
 | After the role-coverage examples | 90.64% | 80.40% | 242 / 25 / 59 | Gold. 26 new dev and test documents for roles that had no gold. Detectors did not change. |
+| After mapping katılan to `VICTIM_NAME` | 91.39% | 81.06% | 244 / 23 / 57 | System. This rule was reversed. A katılan is not always the victim. The gold file did not change. |
+| After reverting that mapping | 90.98% | 80.40% | 242 / 24 / 59 | System. The detector again labels a criminal katılan as `INTERVENOR_NAME`. The gold still uses the old labels, so those two spans are missed and counted as intervenor false positives. |
 
 English national-id recall on the product path is report only. It is not in
 the Turkish table above.
