@@ -17,8 +17,6 @@ All notable changes and improvements to the DeID LegalTech platform.
   merge, not a detector change. `--legacy` remains report-only for one release.
   An English gate for email, phone, IBAN, and national ID is not armed: phone
   recall is 0%, IBAN recall is 77.42%, and national-id recall is 60%.
-  the tag catalog, the placeholder prefixes, and the review labels. The
-  legacy-harness metrics did not move.
 - A detected date of birth that stays visible now counts in the
   re-identification score. A calendar date still counts separately. The
   legacy-harness metrics did not move.
