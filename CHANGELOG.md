@@ -17,6 +17,10 @@ All notable changes and improvements to the DeID LegalTech platform.
   recall from 80.77% to 80.40% (231 / 22 / 55 to 242 / 25 / 59). Detectors
   did not change. The three labeled English numbers are detected. The other
   35 English phone spans are still missed.
+- The English national-id label no longer matches inside a longer word.
+  "national identifier" is not read as "national id" plus the rest of the
+  word. English national-id recall on this gold is 0/10, and Turkish scores
+  did not move.
 - Eleven legal-role person labels were added to the existing schema: victim,
   complainant, suspect, accused, intervenor, legal representative, mediator,
   interpreter, enforcement officer, notary, and arbitrator. `sanık` is

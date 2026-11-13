@@ -243,10 +243,14 @@ positives, 174 false negatives). Person-family precision 86.14%, recall
 unchanged and there is one more false positive; person-family recall gained
 one true positive. Those moves are the system. Email recall is 100% (37).
 Phone recall is 0% (0/35). IBAN recall is 77.42% (24/31). National-id recall
-is 60% (6/10). Those six counted hits are the phrase "national identifier"
-followed by an area-666 number. The rule takes "national id" as a prefix of
-"identifier" and returns "entifier" plus the number. IoU with the gold number
-is 0.55, so the pair counts, and the wider span is not a second false
-positive. The four misses are the ZZ numbers introduced as "national
-insurance number". Arming a 95% English gate on this path would fail CI.
+is 60% (6/10) before the label-boundary fix. Those six counted hits were
+the phrase "national identifier" followed by an area-666 number. The rule
+took "national id" as a prefix of "identifier" and returned "entifier" plus
+the number. IoU with the gold number was 0.55, so the pair counted. The label
+must now end at a word boundary, so those six hits are gone. English
+national-id recall on the current gold is 0/10, with no false positive.
+English strict precision is 73.41% and recall is 41.23% (127 / 46 / 181).
+Turkish scores did not move. That move is the system. The four misses that
+were already there are the ZZ numbers introduced as "national insurance
+number". Arming a 95% English gate on this path would fail CI.
 `--legacy` does not score English.

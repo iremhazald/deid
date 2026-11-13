@@ -45,7 +45,7 @@ _PASSPORT = re.compile(
     rf"(?P<value>[A-Z0-9][A-Z0-9\-]{{4,14}})"
 )
 _NID = re.compile(
-    rf"(?i)(?<![A-Za-z])(?P<label>{_NID_LABEL})\s*[:\-–]?\s*"
+    rf"(?i)(?<![A-Za-z])(?P<label>{_NID_LABEL})(?![A-Za-z])\s*[:\-–]?\s*"
     rf"(?P<value>[A-Za-z0-9][A-Za-z0-9\-\s]{{4,24}})"
 )
 _PHONE = re.compile(
