@@ -11,6 +11,12 @@ All notable changes and improvements to the DeID LegalTech platform.
   (`DAVACI`); labeling her `PERSON_NAME` was a gold error before these role
   types existed. The attendance names in `tr-names-only-001` were not
   relabeled.
+- Role-coverage examples were added to the gold set for roles that had no
+  example, in both dev and test, plus three directly labeled English phone
+  numbers on dev. Turkish strict precision moved from 91.30% to 90.64% and
+  recall from 80.77% to 80.40% (231 / 22 / 55 to 242 / 25 / 59). Detectors
+  did not change. The three labeled English numbers are detected. The other
+  35 English phone spans are still missed.
 - Eleven legal-role person labels were added to the existing schema: victim,
   complainant, suspect, accused, intervenor, legal representative, mediator,
   interpreter, enforcement officer, notary, and arbitrator. `sanık` is

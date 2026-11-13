@@ -209,6 +209,7 @@ move came from the gold set or from the system.
 | Product rules-only path, 22 October | 90.83% | 76.22% | 218 / 22 / 68 | Measurement. Recall is the same. The precision move is the product merge dropping false positives. |
 | After the 11 November detector changes | 87.35% | 77.27% | 221 / 32 / 65 | System. The gold file did not change. |
 | After the approved role relabel | 91.30% | 80.77% | 231 / 22 / 55 | Gold. Detectors did not change. `MELTEM ARI` (`DAVACI`) was already `CLAIMANT_NAME` under the old rules. |
+| After the role-coverage examples | 90.64% | 80.40% | 242 / 25 / 59 | Gold. New dev and test examples for roles that had no gold. Detectors did not change. |
 
 On the 34-document set, after the salary labels were removed, the ungated
 person-family match was precision 89.36% and recall 70.59% (84 / 10 / 35).
