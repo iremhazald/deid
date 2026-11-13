@@ -971,6 +971,30 @@ def _write_docx(path: Path, text: str) -> None:
     document.save(path)
 
 
+def _write_udf(path: Path, text: str) -> None:
+    """One paragraph per line, the same text the PDF and DOCX fixtures use."""
+    import zipfile
+
+    if "]]>" in text:
+        raise ValueError("synthetic UDF text cannot contain a CDATA terminator")
+    paragraphs: list[str] = []
+    cursor = 0
+    for line in text.splitlines(keepends=True) or [text]:
+        paragraphs.append(
+            f'<paragraph><content startOffset="{cursor}" length="{len(line)}"/></paragraph>'
+        )
+        cursor += len(line)
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<template format_id="1.8">'
+        f"<content><![CDATA[{text}]]></content>"
+        f"<elements>{''.join(paragraphs)}</elements>"
+        "</template>"
+    )
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("content.xml", xml.encode("utf-8"))
+
+
 def _read_pdf_text(path: Path) -> str:
     import pymupdf
 
@@ -989,7 +1013,7 @@ def _read_docx_text(path: Path) -> str:
 
 
 async def run_e2e() -> int:
-    """Redact one PDF and one DOCX. Rules-expected leaks fail. NER gaps are reported."""
+    """Redact one PDF, one DOCX, and one UDF. Rules-expected leaks fail."""
     from app.domain.models import (
         DetectionMode,
         DocumentKind,
@@ -1000,6 +1024,7 @@ async def run_e2e() -> int:
     )
     from app.services.jobs import JobStore
     from app.services.pipeline import analyze_pdf, analyze_textual_document, apply_transformations
+    from app.services.udf_package import extract_udf_text
 
     corpus = load_corpus()
     source = next(
@@ -1022,15 +1047,31 @@ async def run_e2e() -> int:
 
     leaks: list[str] = []
     gaps: list[str] = []
+    masked: list[str] = []
+    extraction_missing: list[str] = []
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         pdf_path = root / "sample.pdf"
         docx_path = root / "sample.docx"
+        udf_path = root / "sample.udf"
         _write_pdf(pdf_path, source["text"], font)
         _write_docx(docx_path, source["text"])
-        for kind, path, reader in (
-            ("PDF", pdf_path, _read_pdf_text),
-            ("DOCX", docx_path, _read_docx_text),
+        _write_udf(udf_path, source["text"])
+        udf_text = extract_udf_text(udf_path).text
+        print("UDF text extraction missing:")
+        for entity in source["gold_entities"]:
+            if entity["text"] in udf_text:
+                continue
+            item = f"UDF {entity['type']} {entity['text']}"
+            extraction_missing.append(item)
+            print(f"  - {item}")
+        if not extraction_missing:
+            print("  none")
+        missing_from_udf = {item.split(" ", 2)[2] for item in extraction_missing}
+        for kind, path, reader, output_format in (
+            ("PDF", pdf_path, _read_pdf_text, "PDF"),
+            ("DOCX", docx_path, _read_docx_text, "DOCX"),
+            ("UDF", udf_path, _read_pdf_text, "PDF"),
         ):
             store = JobStore(3600)
             job = store.create(path.name, path.read_bytes(), DocumentKind[kind])
@@ -1056,7 +1097,7 @@ async def run_e2e() -> int:
                     return 1
                 _output, audit = await apply_transformations(
                     job,
-                    RedactionRequest(decisions=decisions, output_format=kind),
+                    RedactionRequest(decisions=decisions, output_format=output_format),
                     None,
                 )
                 extracted = reader(job.output_path)
@@ -1068,12 +1109,15 @@ async def run_e2e() -> int:
             finally:
                 store.delete(job.id)
             for entity in source["gold_entities"]:
+                item = f"{kind} {entity['type']} {entity['text']}"
                 if entity["text"] not in extracted:
+                    if kind == "UDF" and entity["text"] not in missing_from_udf:
+                        masked.append(item)
                     continue
                 if _rules_expected(source["text"], entity):
-                    leaks.append(f"{kind} {entity['type']} {entity['text']}")
+                    leaks.append(item)
                 else:
-                    gaps.append(f"{kind} {entity['type']} {entity['text']}")
+                    gaps.append(item)
     print("\nRules-expected leaks:")
     if leaks:
         for item in leaks:
@@ -1086,7 +1130,25 @@ async def run_e2e() -> int:
             print(f"  - {item}")
     else:
         print("  none")
-    return 1 if leaks else 0
+    print("UDF gold values masked:")
+    if masked:
+        for item in masked:
+            print(f"  - {item}")
+    else:
+        print("  none")
+    udf_accounted = (
+        len(extraction_missing)
+        + len(masked)
+        + sum(item.startswith("UDF ") for item in gaps)
+        + sum(item.startswith("UDF ") for item in leaks)
+    )
+    if udf_accounted != len(source["gold_entities"]):
+        print(
+            "UDF gold values were not all accounted for "
+            f"({udf_accounted} of {len(source['gold_entities'])})"
+        )
+        return 1
+    return 1 if leaks or extraction_missing else 0
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -1116,7 +1178,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--e2e",
         action="store_true",
-        help="Local only. Redact one synthetic PDF and one DOCX through the product export and check for leaks.",
+        help="Local only. Redact one synthetic PDF, DOCX, and UDF through the product export and check for leaks.",
     )
     return parser.parse_args(argv)
 
