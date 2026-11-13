@@ -4,6 +4,13 @@ All notable changes and improvements to the DeID LegalTech platform.
 
 ## [Unreleased]
 
+- The approved role relabel is gold only. Turkish strict precision moved from
+  87.35% to 91.30% and recall from 77.27% to 80.77% (221 / 32 / 65 to
+  231 / 22 / 55). Detectors did not change. `MELTEM ARI` in
+  `tr-dev-caption-001` was already the claimant under the old rules
+  (`DAVACI`); labeling her `PERSON_NAME` was a gold error before these role
+  types existed. The attendance names in `tr-names-only-001` were not
+  relabeled.
 - Eleven legal-role person labels were added to the existing schema: victim,
   complainant, suspect, accused, intervenor, legal representative, mediator,
   interpreter, enforcement officer, notary, and arbitrator. `sanık` is

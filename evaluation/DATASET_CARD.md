@@ -208,15 +208,23 @@ move came from the gold set or from the system.
 | Legacy harness on the current 62 Turkish documents | 86.17% | 76.22% | 218 / 35 / 68 | Gold. The harness was the previous detector list. |
 | Product rules-only path, 22 October | 90.83% | 76.22% | 218 / 22 / 68 | Measurement. Recall is the same. The precision move is the product merge dropping false positives. |
 | After the 11 November detector changes | 87.35% | 77.27% | 221 / 32 / 65 | System. The gold file did not change. |
+| After the approved role relabel | 91.30% | 80.77% | 231 / 22 / 55 | Gold. Detectors did not change. `MELTEM ARI` (`DAVACI`) was already `CLAIMANT_NAME` under the old rules. |
 
 On the 34-document set, after the salary labels were removed, the ungated
 person-family match was precision 89.36% and recall 70.59% (84 / 10 / 35).
 On the 22 October product path the ungated Turkish person-family match was
 precision 93.75% and recall 78.67%. After the 11 November detectors it is
 precision 94.86% and recall 83.92% (240 / 13 / 46). That move is the system.
+The role relabel did not move the person-family match: the spans stayed
+inside the person family. Turkish dev strict moved from 84.34% precision and
+73.30% recall (140 / 26 / 51) to 90.36% and 78.53% (150 / 16 / 41). Turkish
+test strict stayed 93.10% and 85.26% (81 / 6 / 14). English strict moved
+from 72.89% and 41.02% (121 / 45 / 174) to 73.49% and 41.36% (122 / 44 / 173)
+because `Roger Rowe` is now `PROSECUTOR_NAME`. That move is on the test
+split only. English person-family did not move.
 
-The same gold file, split by `dev` and `test`, shows where that system change
-landed. Turkish test strict precision moved from 90.48% to 93.10% and recall
+Before that relabel, the same gold file, split by `dev` and `test`, shows
+where the 11 November system change landed. Turkish test strict precision moved from 90.48% to 93.10% and recall
 from 80.00% to 85.26% (76 / 8 / 19 to 81 / 6 / 14). Turkish dev strict
 precision moved from 91.03% to 84.34% and recall from 74.35% to 73.30%
 (142 / 14 / 49 to 140 / 26 / 51). The test split improved on both precision
