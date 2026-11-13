@@ -14,12 +14,7 @@ from app.detectors.legal.names import (
     is_workplace_or_job_title,
     strip_possessive,
 )
-from app.detectors.legal.roles import (
-    PERSON_TRIGGERS,
-    contextualize_role,
-    officer_role_body,
-    resolve_trigger,
-)
+from app.detectors.legal.roles import PERSON_TRIGGERS, officer_role_body, resolve_trigger
 from app.detectors.registry import PageText
 from app.detectors.textutil import fold_tr_identity
 from app.domain.models import EntityCandidate, EntityType
@@ -146,7 +141,7 @@ def _emit(
     name, start, end = clipped
     if is_non_person_surface(name) or is_legal_role_label(name):
         return None
-    role, entity_type = contextualize_role(role_raw, *resolve_trigger(role_raw), page.text)
+    role, entity_type = resolve_trigger(role_raw)
     return make_candidate(
         page,
         text=name,

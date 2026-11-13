@@ -6,7 +6,7 @@ import re
 
 from app.detectors.legal.common import make_candidate
 from app.detectors.legal.names import BARE_NAME_TOKEN, clipped_name_span
-from app.detectors.legal.roles import PERSON_TRIGGERS, contextualize_role, resolve_trigger
+from app.detectors.legal.roles import PERSON_TRIGGERS, resolve_trigger
 from app.detectors.registry import PageText
 from app.domain.models import EntityCandidate, EntityType
 
@@ -37,9 +37,7 @@ def parse_statements(page: PageText) -> list[EntityCandidate]:
             name, start, end = clipped
             role_raw = match.groupdict().get("role") or ""
             role, entity_type = (
-                contextualize_role(role_raw, *resolve_trigger(role_raw), page.text)
-                if role_raw
-                else ("", EntityType.PERSON_NAME)
+                resolve_trigger(role_raw) if role_raw else ("", EntityType.PERSON_NAME)
             )
             candidate = make_candidate(
                 page,

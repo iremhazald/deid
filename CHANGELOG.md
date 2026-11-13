@@ -31,14 +31,6 @@ All notable changes and improvements to the DeID LegalTech platform.
   and test recall from 0/10 to 4/10, with precision 100% both times. The
   ten-phone holdout, scored on its own, is 6/10. There is no new false
   positive. Turkish scores did not move.
-- Katılan in a criminal case is now `VICTIM_NAME`, matching the guidelines.
-  Müdahil is `VICTIM_NAME` only when the text is criminal. Fer'i müdahil
-  stays `INTERVENOR_NAME`. Attendance (`toplantıya katılan`) is still not a
-  person. Turkish strict precision moved from 90.64% to 91.39% and recall
-  from 80.40% to 81.06% (242 / 25 / 59 to 244 / 23 / 57). Dev gained one
-  true positive and lost one false positive; test did the same. English
-  scores did not move. Victim recall is 4/4 and intervenor has no false
-  positives.
 - The approved role relabel is gold only. Turkish strict precision moved from
   87.35% to 91.30% and recall from 77.27% to 80.77% (221 / 32 / 65 to
   231 / 22 / 55). Detectors did not change. `MELTEM ARI` in
