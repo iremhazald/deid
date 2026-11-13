@@ -129,9 +129,10 @@ mention that does not repeat the role word.
 | Davalı, borçlu | `DEFENDANT_NAME` |
 | Sanık, suça sürüklenen çocuk, SSÇ when the clause is a criminal proceeding | `ACCUSED_NAME` |
 | Şüpheli | `SUSPECT_NAME` |
-| Müşteki, şikâyetçi | `COMPLAINANT_NAME` |
+| Müşteki, şikâyetçi, when that word is the only status | `COMPLAINANT_NAME` |
 | Mağdur | `VICTIM_NAME` |
 | Katılan, when the person joined a criminal case and is not also the victim | `INTERVENOR_NAME` |
+| Katılan müşteki, müşteki katılan | `INTERVENOR_NAME` |
 | Mağdur-katılan, katılan mağdur, when the same person is both the victim and katılan | `VICTIM_NAME` |
 | Müdahil in a civil proceeding, including fer'i müdahil | `INTERVENOR_NAME` |
 | Müdahil in an older criminal text, where it means katılan | `INTERVENOR_NAME` |
@@ -154,6 +155,12 @@ mention that does not repeat the role word.
 party. A katılan is not always the victim. The victim may be a child while
 the katılan is a parent, a person who was harmed but is not the victim, or
 a public institution.
+
+`Müşteki` or `şikâyetçi` is the status during the investigation. When that
+person joins the prosecution, the status becomes katılan. When two
+procedural statuses are written together, label the current one. `Katılan
+müşteki` and `müşteki katılan` are therefore `INTERVENOR_NAME`. `Müşteki`
+or `şikâyetçi` alone stays `COMPLAINANT_NAME`.
 
 `Katılanlar` meaning the people who attended a meeting is not a role. It
 does not assign `VICTIM_NAME` or `INTERVENOR_NAME`. A role word that is
