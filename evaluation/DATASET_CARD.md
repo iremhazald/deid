@@ -224,7 +224,15 @@ move came from the gold set or from the system.
 | Product rules-only path, 22 October | 90.83% | 76.22% | 218 / 22 / 68 | Measurement. Recall is the same. The precision move is the product merge dropping false positives. |
 | After the 11 November detector changes | 87.35% | 77.27% | 221 / 32 / 65 | System. The gold file did not change. |
 | After the approved role relabel | 91.30% | 80.77% | 231 / 22 / 55 | Gold. Detectors did not change. `MELTEM ARI` (`DAVACI`) was already `CLAIMANT_NAME` under the old rules. |
-| After the role-coverage examples | 90.64% | 80.40% | 242 / 25 / 59 | Gold. New dev and test examples for roles that had no gold. Detectors did not change. |
+| After the role-coverage examples | 90.64% | 80.40% | 242 / 25 / 59 | Gold. 26 new dev and test documents for roles that had no gold. Detectors did not change. |
+
+English national-id recall on the product path is report only. It is not in
+the Turkish table above.
+
+| Stage | Recall | Source |
+| --- | --- | --- |
+| Before the label had to end at a word boundary | 6/10 | The six hits were the wrong text. The rule read `national id` inside `national identifier` and returned `entifier` plus the number. |
+| After the label must end at a word boundary | 0/10 | System. The gold number is not detected. No false positive. Turkish scores did not move. |
 
 On the 34-document set, after the salary labels were removed, the ungated
 person-family match was precision 89.36% and recall 70.59% (84 / 10 / 35).
@@ -258,14 +266,9 @@ positives, 174 false negatives). Person-family precision 86.14%, recall
 unchanged and there is one more false positive; person-family recall gained
 one true positive. Those moves are the system. Email recall is 100% (37).
 Phone recall is 0% (0/35). IBAN recall is 77.42% (24/31). National-id recall
-is 60% (6/10) before the label-boundary fix. Those six counted hits were
-the phrase "national identifier" followed by an area-666 number. The rule
-took "national id" as a prefix of "identifier" and returned "entifier" plus
-the number. IoU with the gold number was 0.55, so the pair counted. The label
-must now end at a word boundary, so those six hits are gone. English
-national-id recall on the current gold is 0/10, with no false positive.
-English strict precision is 73.41% and recall is 41.23% (127 / 46 / 181).
-Turkish scores did not move. That move is the system. The four misses that
-were already there are the ZZ numbers introduced as "national insurance
-number". Arming a 95% English gate on this path would fail CI.
+moved from 6/10 to 0/10 in the table above. That move is the system. The four
+misses that were already there are the ZZ numbers introduced as "national
+insurance number". English strict precision after the boundary fix is 73.41%
+and recall is 41.23% (127 / 46 / 181). Arming a 95% English gate on this path
+would fail CI.
 `--legacy` does not score English.
