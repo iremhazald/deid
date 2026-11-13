@@ -59,6 +59,49 @@ _CITY_RE = re.compile(
 _SLASH_PLACE = re.compile(
     r"\b([A-ZÇĞİÖŞÜ][A-Za-zÇĞİÖŞÜçğıöşü]+)\s*/\s*([A-ZÇĞİÖŞÜ][A-Za-zÇĞİÖŞÜçğıöşü]+)\b"
 )
+# House number and door token between the street marker and the city.
+# "156/A" must not block "Beşiktaş/İstanbul". A word does not count as a door.
+_PLACE_LEAD = re.compile(r"[\s.:-]*(?:\d+(?:\s*/\s*[A-Za-z0-9]{1,4})?[\s.:-]*)*")
+
+
+def place_tail_end(tail: str) -> int | None:
+    """Include a district and the city that follows it.
+
+    ``Kadıköy İstanbul`` and ``Konak/İzmir`` are one place. The house number
+    between the street and that place stays inside the span.
+    """
+    cursor = 0
+    end: int | None = None
+    first = True
+    while cursor < len(tail):
+        rest = tail[cursor:]
+        options: list[re.Match[str]] = []
+        for match in (_SLASH_PLACE.search(rest), _CITY_RE.search(rest)):
+            if match is None:
+                continue
+            gap = rest[: match.start()]
+            if first:
+                if gap and _PLACE_LEAD.fullmatch(gap) is None:
+                    continue
+            elif gap.strip(" /"):
+                continue
+            options.append(match)
+        if not options:
+            break
+        chosen = min(options, key=lambda match: (match.start(), match.start() - match.end()))
+        new_end = cursor + chosen.end()
+        if end is not None and new_end <= end:
+            break
+        end = new_end
+        cursor = end
+        first = False
+        while cursor < len(tail) and tail[cursor] in " /":
+            cursor += 1
+    if end is not None:
+        postal = re.match(r"\s+\d{5}\b", tail[end:])
+        if postal:
+            end += postal.end()
+    return end
 
 def _kind(match: re.Match[str]) -> str:
     for _pattern, name in _MARKERS:
@@ -112,9 +155,9 @@ def parse_address_tokens(page: PageText) -> list[EntityCandidate]:
         cut = _CLUSTER_BREAK.search(tail)
         if cut:
             tail = tail[: cut.start()]
-        place = _SLASH_PLACE.search(tail) or _CITY_RE.search(tail)
-        if place:
-            end = end + place.end()
+        place_end = place_tail_end(tail)
+        if place_end:
+            end = end + place_end
 
         raw = text[start:end]
         trimmed = _TRAILING_BOILERPLATE.sub("", raw)

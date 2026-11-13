@@ -65,9 +65,11 @@ def generate_composite_addresses(
             )
             if lead:
                 start = start + lead.start(1)
-            place = _PLACE.search(text[cluster[-1].end() : end])
-            if place:
-                end = cluster[-1].end() + place.end()
+            from app.detectors.legal.address import place_tail_end
+
+            place_end = place_tail_end(text[cluster[-1].end() : end])
+            if place_end:
+                end = cluster[-1].end() + place_end
             else:
                 end = cluster[-1].end()
             uets_cut = re.search(r"(?i)\bUETS\b", text[start:end])

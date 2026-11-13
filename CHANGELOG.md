@@ -4,6 +4,12 @@ All notable changes and improvements to the DeID LegalTech platform.
 
 ## [Unreleased]
 
+- A Turkish street address now keeps the city when a district is written
+  before it. `Kadıköy İstanbul` and `Konak/İzmir` no longer leave the city
+  visible. A door token such as `156/A` does not cut the span, and a
+  five-digit postal code after the city stays inside it. Turkish address
+  matches below overlap 0.8 went from 2 of 15 to 0 of 15. The strict counts
+  did not move, because those two spans already cleared 0.5.
 - English phone detection now allows one function word (`at`, `on`, or `to`)
   between the label and the number, the verb `telephoned` with an optional
   `to`, and the phrase `call me on`. The number must contain 10 to 15 digits.
