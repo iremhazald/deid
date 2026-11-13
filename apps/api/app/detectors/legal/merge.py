@@ -571,12 +571,6 @@ def _clip_person_candidates(candidates: list[EntityCandidate]) -> list[EntityCan
         } or item.attributes.get("parent_role"):
             kept.append(item)
             continue
-        if re.match(
-            r"(?i)^(?:prof(?:essor)?|dr|avukat|av|h[âa]k[iı]m|yarg[ıi][çc])\.?",
-            item.text.strip(),
-        ):
-            kept.append(item)
-            continue
         clipped = _person_value_span(item.text)
         if clipped is None:
             if len(item.text.split()) <= 1:
@@ -600,9 +594,9 @@ def _clip_person_candidates(candidates: list[EntityCandidate]) -> list[EntityCan
 def _expose_case_suffix(item: EntityCandidate) -> EntityCandidate:
     """Leave ``'ın`` and other case endings outside the labeled span.
 
-    ``Av. Mehmet Yılmaz'ın`` labels ``Av. Mehmet Yılmaz``. The apostrophe and
-    the ending stay in the document. A capitalized piece such as ``O'Brien``
-    is not an ending and is left intact. Professional titles stay inside.
+    ``Av. Mehmet Yılmaz'ın`` labels ``Mehmet Yılmaz``. The title, the apostrophe,
+    and the ending stay in the document. A capitalized piece such as ``O'Brien``
+    is not an ending and is left intact.
     """
     cut = trailing_case_cut(item.text)
     if cut is None or cut <= 0:

@@ -4,6 +4,12 @@ All notable changes and improvements to the DeID LegalTech platform.
 
 ## [Unreleased]
 
+- Professional titles stay outside the person span. `Av.`, `Hâkim`, `Dr.`,
+  and `Bilirkişi` are no longer part of the labeled name. On the boundary
+  report, lawyer matches below overlap 0.8 went from 5 of 5 to 0 of 5, judge
+  from 3 of 4 to 0 of 4, expert from 1 of 1 to 0 of 1, and the `Dr.` person
+  span from 1 of 27 to 0 of 27. Turkish strict precision moved from 91.39%
+  to 91.73% (244 / 23 / 57 to 244 / 22 / 57). Recall did not move.
 - A Turkish street address now keeps the city when a district is written
   before it. `Kadıköy İstanbul` and `Konak/İzmir` no longer leave the city
   visible. A door token such as `156/A` does not cut the span, and a

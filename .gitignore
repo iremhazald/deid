@@ -63,4 +63,5 @@ apps/api/tests/*
 !apps/api/tests/test_en_national_id_label.py
 !apps/api/tests/test_en_phone_cues.py
 !apps/api/tests/test_tr_address_city.py
+!apps/api/tests/test_tr_title_outside_span.py
 !apps/api/tests/test_residual_placeholders.py

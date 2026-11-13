@@ -200,15 +200,13 @@ def detect_turkish_advanced(page: PageText) -> Iterable[EntityCandidate]:
     for match in ADDRESS_PATTERN.finditer(page.text):
         yield _candidate(page, match, EntityType.ADDRESS, "TR_ADDRESS_GRAMMAR")
     
-    # Legal roles with names. Professional titles stay inside the labeled span.
+    # Legal roles with names. The title stays outside the span.
     for match in LEGAL_ROLE_PREFIX.finditer(page.text):
         title = match.group("head")
         role_type = fold_tr(re.sub(r"[.\s]+", "", title))
         identity = fold_tr_identity(re.sub(r"[.\s]+", "", title))
         entity_type = EntityType.PERSON_NAME
         role = None
-        # Prosecutor and clerk labels stay outside the person span.
-        name_only = False
         if role_type.startswith("av") or "avukat" in role_type or "mudafi" in role_type:
             before = fold_tr_identity(page.text[max(0, match.start() - 16) : match.start()])
             # "Arabulucu Avukat" is the mediator role, not counsel.
@@ -222,11 +220,9 @@ def detect_turkish_advanced(page: PageText) -> Iterable[EntityCandidate]:
         elif "savci" in identity:
             entity_type = EntityType.PROSECUTOR_NAME
             role = "PROSECUTOR"
-            name_only = True
         elif "katip" in identity:
             entity_type = EntityType.COURT_CLERK_NAME
             role = "CLERK"
-            name_only = True
         elif "bilirkisi" in role_type or "bilirkişi" in role_type:
             entity_type = EntityType.EXPERT_NAME
 
@@ -235,7 +231,7 @@ def detect_turkish_advanced(page: PageText) -> Iterable[EntityCandidate]:
             match,
             entity_type,
             "TR_LEGAL_ROLE_NAME",
-            group="name" if name_only else 0,
+            group="name",
         )
         if role:
             candidate = candidate.model_copy(update={"role": role})

@@ -234,8 +234,6 @@ def parse_role_persons(page: PageText) -> list[EntityCandidate]:
                 match.group("name"),
                 match.start("name"),
                 match.group("titles"),
-                include_title=True,
-                span_start=match.start(),
             )
         )
     for pattern, before_role in (
