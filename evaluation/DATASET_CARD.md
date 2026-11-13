@@ -191,6 +191,17 @@ recall on this set is reported on its own. The English phone spans already
 in dev and test had been listed in an error analysis, so those results are
 not a clean measure of a later phone rule.
 
+Six later Turkish documents were written from the annotation guidelines on
+14 November 2026, before the detector was changed for this rule. Three are
+dev and three are test. `tr-dev-child-katilan-001` has a child victim and a
+parent who joins the prosecution as katılan. `tr-dev-magdur-katilan-001`
+has one `mağdur-katılan` and one `katılan mağdur`. `tr-dev-musteki-001` has
+`müşteki` alone. `tr-test-eski-mudahil-001` uses `Müdahil` in an older
+criminal text, meaning katılan. `tr-test-toplanti-katilanlar-001` is a
+meeting record; the attendees are `PERSON_NAME` and have no role type.
+`tr-test-katilan-musteki-001` has `katılan müşteki`. The score of these six
+documents is reported on its own.
+
 ## Review
 
 `REVIEW.md` has the text of ten Turkish test documents and ten English test
@@ -227,6 +238,7 @@ move came from the gold set or from the system.
 | After the role-coverage examples | 90.64% | 80.40% | 242 / 25 / 59 | Gold. 26 new dev and test documents for roles that had no gold. Detectors did not change. |
 | After mapping katılan to `VICTIM_NAME` | 91.39% | 81.06% | 244 / 23 / 57 | System. This rule was reversed. A katılan is not always the victim. The gold file did not change. |
 | After reverting that mapping | 90.98% | 80.40% | 242 / 24 / 59 | System. The detector again labels a criminal katılan as `INTERVENOR_NAME`. The gold still uses the old labels, so those two spans are missed and counted as intervenor false positives. |
+| After relabeling the two katılan spans to `INTERVENOR_NAME` | 91.73% | 81.06% | 244 / 22 / 57 | Gold. Detectors did not change. `Nihal Sert` and `Rıza Demirtaş` match the detector again. |
 
 English national-id recall on the product path is report only. It is not in
 the Turkish table above.
