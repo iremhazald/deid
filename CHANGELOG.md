@@ -4,6 +4,12 @@ All notable changes and improvements to the DeID LegalTech platform.
 
 ## [Unreleased]
 
+- Commit `1e35981` put the UDF section reader and the end-to-end fixture in
+  one change. The reader change is in `udf_package.py`. The second UDF, a
+  table inside more than one section, is built in the harness from the
+  existing `tr-test-icra-001` gold. `test_corpus.jsonl` was not in that
+  commit, so no new gold document was added. A reader change stays separate
+  from a harness fixture and from gold.
 - Professional titles stay outside the person span. `Av.`, `Hâkim`, `Dr.`,
   and `Bilirkişi` are no longer part of the labeled name. On the boundary
   report, lawyer matches below overlap 0.8 went from 5 of 5 to 0 of 5, judge
