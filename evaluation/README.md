@@ -84,9 +84,10 @@ PERSON_NAME and CREDIT_CARD are excluded from critical 95% recall gates because:
 - CREDIT_CARD: Partial card references ("last 4 digits") are not full cards
 
 Each category line prints its gold count. Precision, recall, and F1 are also
-printed by difficulty and by document type. A category, difficulty, or document
-type with fewer than 10 gold entities is marked `low sample`. The flag does
-not fail CI.
+printed by difficulty and by document type. The same run prints strict and
+person-family scores by split (`dev` and `test`) for each language that path
+scores. A category, difficulty, or document type with fewer than 10 gold
+entities is marked `low sample`. The flag does not fail CI.
 
 ## Running
 

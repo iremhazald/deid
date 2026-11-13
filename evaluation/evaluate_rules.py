@@ -14,9 +14,10 @@ Usage:
 A prediction matches a gold span of the same type when overlap IoU is
 at least 0.5. The CI gates use that strict match on Turkish documents.
 A second, ungated match treats every person-name type as one family.
-English documents are reported and are not gated. Each run writes a JSON
-result file. The legacy detector list does not include the English pack, so
-this command does not score English documents.
+English documents are reported and are not gated. The same run also
+reports both matches by corpus split, for each language this path scores.
+Each run writes a JSON result file. The legacy detector list does not
+include the English pack, so this command does not score English documents.
 """
 
 from __future__ import annotations
@@ -327,6 +328,9 @@ async def evaluate() -> dict[str, Any]:
         "overall": turkish["strict"]["overall"],
         "by_category": turkish["strict"]["by_category"],
         "by_language": by_language,
+        "by_split": by_split_report(
+            [row for row in detected if row[0].get("language") != "en"]
+        ),
         "by_difficulty": _slice_table(turkish_rows, "difficulty"),
         "by_document_type": _slice_table(turkish_rows, "document_type"),
         "gold_support": dict(support),
@@ -395,6 +399,7 @@ async def evaluate_product_rules() -> dict[str, Any]:
         "overall": turkish["strict"]["overall"],
         "by_category": turkish["strict"]["by_category"],
         "by_language": by_language,
+        "by_split": by_split_report(detected),
         "by_difficulty": _slice_table(turkish_rows, "difficulty"),
         "by_document_type": _slice_table(turkish_rows, "document_type"),
         "gold_support": dict(support),
@@ -462,6 +467,45 @@ def _print_categories(scored: dict[str, Any]) -> None:
             print("    low sample")
 
 
+def _score_row_pairs(
+    rows: list[tuple[dict[str, Any], set[tuple[int, int, str]], set[tuple[int, int, str]]]],
+    *,
+    family: bool,
+) -> dict[str, Any]:
+    pairs: list[tuple[set[tuple[int, int, str]], set[tuple[int, int, str]]]] = []
+    for _doc, predicted, gold in rows:
+        if family:
+            predicted = _as_family(predicted)
+            gold = _as_family(gold)
+        pairs.append((predicted, gold))
+    return _score_pairs(pairs)
+
+
+def by_split_report(
+    rows: list[tuple[dict[str, Any], set[tuple[int, int, str]], set[tuple[int, int, str]]]],
+) -> dict[str, Any]:
+    """Strict and person-family scores for each language and corpus split.
+
+    Languages that this path does not score must be left out of ``rows``.
+    """
+    grouped: dict[str, dict[str, list]] = defaultdict(lambda: defaultdict(list))
+    for doc, predicted, gold in rows:
+        language = str(doc.get("language", "tr"))
+        split = str(doc.get("split", ""))
+        grouped[language][split].append((doc, predicted, gold))
+    report: dict[str, Any] = {}
+    for language in sorted(grouped):
+        report[language] = {}
+        for split in sorted(grouped[language]):
+            split_rows = grouped[language][split]
+            report[language][split] = {
+                "documents": len(split_rows),
+                "strict": _score_row_pairs(split_rows, family=False),
+                "person_family": _score_row_pairs(split_rows, family=True),
+            }
+    return report
+
+
 def _slice_table(
     rows: list[tuple[dict[str, Any], set[tuple[int, int, str]], set[tuple[int, int, str]]]],
     key: str,
@@ -490,6 +534,25 @@ def _print_slices(results: dict[str, Any]) -> None:
                 f"  {name}: gold {metrics['gold']}  P {metrics['precision']:.2%}  "
                 f"R {metrics['recall']:.2%}  F1 {metrics['f1']:.2%}{flag}"
             )
+
+
+def _print_by_split(results: dict[str, Any]) -> None:
+    table = results.get("by_split") or {}
+    if not table:
+        return
+    print("\n" + "=" * 60)
+    print("BY SPLIT (strict and person-family)")
+    for language in table:
+        for split, scored in table[language].items():
+            print(f"  {language} / {split} ({scored['documents']} documents)")
+            for label, key in (("strict", "strict"), ("person-family", "person_family")):
+                overall = scored[key]["overall"]
+                gold = overall["tp"] + overall["fn"]
+                print(
+                    f"    {label}: gold {gold}  P {overall['precision']:.2%}  "
+                    f"R {overall['recall']:.2%}  F1 {overall['f1']:.2%}  "
+                    f"TP {overall['tp']} FP {overall['fp']} FN {overall['fn']}"
+                )
 
 
 def _print_gold_support(results: dict[str, Any]) -> None:
@@ -525,6 +588,7 @@ def print_results(results: dict[str, Any]) -> bool:
         print("TURKISH PERSON-FAMILY MATCH (not gated)")
         _print_overall("OVERALL:", turkish["person_family"])
     _print_slices(results)
+    _print_by_split(results)
     _print_gold_support(results)
     english = by_language.get("en")
     if english is not None and english["corpus_size"]:
@@ -576,6 +640,7 @@ def build_report(results: dict[str, Any], failures: list[str]) -> dict[str, Any]
         "overall": results["overall"],
         "by_category": results["by_category"],
         "by_language": results.get("by_language", {}),
+        "by_split": results.get("by_split", {}),
         "by_difficulty": results.get("by_difficulty", {}),
         "by_document_type": results.get("by_document_type", {}),
         "gold_support": results.get("gold_support", {}),
@@ -838,9 +903,11 @@ def _language_report(
     report: dict[str, Any] = {}
     languages = sorted({str(doc.get("language", "tr")) for doc, _, _ in rows})
     for language in languages:
+        language_rows = [row for row in rows if row[0].get("language", "tr") == language]
         report[language] = {
             "strict": _score_pairs(_language_pairs(rows, language, family=False)),
             "person_family": _score_pairs(_language_pairs(rows, language, family=True)),
+            "by_split": by_split_report(language_rows).get(language, {}),
         }
     return report
 
@@ -859,6 +926,10 @@ def _print_product_scores(
         _print_mode_line(label, scored["overall"])
         family = _score_pairs(_language_pairs(rows, language, family=True))
         _print_mode_line("  person-family", family["overall"])
+        language_rows = [row for row in rows if row[0].get("language", "tr") == language]
+        for split, scored in by_split_report(language_rows).get(language, {}).items():
+            _print_mode_line(f"  {split} strict", scored["strict"]["overall"])
+            _print_mode_line(f"  {split} person-family", scored["person_family"]["overall"])
 
 
 def _font_file() -> Path | None:
