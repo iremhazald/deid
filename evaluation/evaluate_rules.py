@@ -42,6 +42,7 @@ from app.domain.models import EntityType
 CORPUS_PATH = Path(__file__).parent / "test_corpus.jsonl"
 RUNS_DIR = Path(__file__).parent / "runs"
 IOU_THRESHOLD = 0.5
+BOUNDARY_IOU = 0.8
 HARNESS_NAME = "legacy_rules"
 PRECISION_THRESHOLD = 0.75  # CI fails if precision < 75%
 # Overall recall threshold is set to 50% for RULES_ONLY evaluation because:
@@ -162,6 +163,35 @@ def overlap_iou(pred_start: int, pred_end: int, gold_start: int, gold_end: int) 
     return intersection / union if union > 0 else 0.0
 
 
+def _greedy_matches(
+    predicted: set[tuple[int, int, str]],
+    gold: set[tuple[int, int, str]],
+    iou_threshold: float = IOU_THRESHOLD,
+) -> list[tuple[tuple[int, int, str], tuple[int, int, str], float]]:
+    """Same-type pairs. Each prediction keeps its best unmatched gold span."""
+    pred_list = list(predicted)
+    gold_list = list(gold)
+    matched_gold: set[int] = set()
+    pairs: list[tuple[tuple[int, int, str], tuple[int, int, str], float]] = []
+
+    for pred in pred_list:
+        best_index: int | None = None
+        best_iou = -1.0
+        best_gold: tuple[int, int, str] | None = None
+        for index, gold_span in enumerate(gold_list):
+            if pred[2] != gold_span[2] or index in matched_gold:
+                continue
+            iou = overlap_iou(pred[0], pred[1], gold_span[0], gold_span[1])
+            if iou >= iou_threshold and iou > best_iou:
+                best_iou = iou
+                best_index = index
+                best_gold = gold_span
+        if best_index is not None and best_gold is not None:
+            matched_gold.add(best_index)
+            pairs.append((pred, best_gold, best_iou))
+    return pairs
+
+
 def match_entities_with_overlap(
     predicted: set[tuple[int, int, str]],
     gold: set[tuple[int, int, str]],
@@ -174,35 +204,8 @@ def match_entities_with_overlap(
 
     Returns: (true_positives, false_positives, false_negatives)
     """
-    pred_list = list(predicted)
-    gold_list = list(gold)
-    matched_gold = set()
-    matched_pred = set()
-
-    for i, (p_start, p_end, p_type) in enumerate(pred_list):
-        best_match = None
-        best_iou = -1.0
-
-        for j, (g_start, g_end, g_type) in enumerate(gold_list):
-            if p_type != g_type:
-                continue
-            if j in matched_gold:
-                continue
-
-            iou = overlap_iou(p_start, p_end, g_start, g_end)
-            if iou >= iou_threshold and iou > best_iou:
-                best_iou = iou
-                best_match = j
-
-        if best_match is not None:
-            matched_pred.add(i)
-            matched_gold.add(best_match)
-
-    tp = len(matched_pred)
-    fp = len(pred_list) - tp
-    fn = len(gold_list) - len(matched_gold)
-
-    return tp, fp, fn
+    matched = len(_greedy_matches(predicted, gold, iou_threshold))
+    return matched, len(predicted) - matched, len(gold) - matched
 
 
 async def detect_rules_only(text: str) -> set[tuple[int, int, str]]:
@@ -219,6 +222,51 @@ def _metrics_from_counts(tp: int, fp: int, fn: int) -> dict[str, float | int]:
     recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
     f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0.0
     return {"precision": precision, "recall": recall, "f1": f1, "tp": tp, "fp": fp, "fn": fn}
+
+
+def boundary_report(
+    detected: list[tuple[dict[str, Any], set[tuple[int, int, str]], set[tuple[int, int, str]]]],
+) -> dict[str, Any]:
+    """Strict matches whose IoU is below 0.8. This does not change the 0.5 rule."""
+    counts: dict[str, Counter[str]] = defaultdict(Counter)
+    low: dict[str, dict[str, list[dict[str, Any]]]] = defaultdict(lambda: defaultdict(list))
+    for doc, predicted, gold in detected:
+        language = str(doc.get("language", "tr"))
+        text = str(doc.get("text", ""))
+        for pred, gold_span, iou in _greedy_matches(predicted, gold):
+            label = gold_span[2]
+            counts[language][label] += 1
+            if iou >= BOUNDARY_IOU:
+                continue
+            low[language][label].append(
+                {
+                    "document": doc.get("id"),
+                    "gold": text[gold_span[0] : gold_span[1]],
+                    "gold_span": [gold_span[0], gold_span[1]],
+                    "predicted": text[pred[0] : pred[1]],
+                    "predicted_span": [pred[0], pred[1]],
+                    "iou": round(iou, 3),
+                }
+            )
+    report: dict[str, Any] = {}
+    for language in sorted(set(counts) | set(low)):
+        categories = sorted(set(counts[language]) | set(low[language]))
+        report[language] = {
+            category: {
+                "matches": counts[language][category],
+                "below": len(low[language][category]),
+                "items": sorted(
+                    low[language][category],
+                    key=lambda row: (
+                        str(row["document"]),
+                        row["gold_span"][0],
+                        row["predicted_span"][0],
+                    ),
+                ),
+            }
+            for category in categories
+        }
+    return report
 
 
 def _as_family(entities: set[tuple[int, int, str]]) -> set[tuple[int, int, str]]:
@@ -334,6 +382,7 @@ async def evaluate() -> dict[str, Any]:
         "by_difficulty": _slice_table(turkish_rows, "difficulty"),
         "by_document_type": _slice_table(turkish_rows, "document_type"),
         "gold_support": dict(support),
+        "boundary": boundary_report(detected),
         "path_label": "Path: legacy detectors plus unmerged structural hits",
         "gate_label": "Gates: strict match, Turkish documents",
     }
@@ -403,6 +452,7 @@ async def evaluate_product_rules() -> dict[str, Any]:
         "by_difficulty": _slice_table(turkish_rows, "difficulty"),
         "by_document_type": _slice_table(turkish_rows, "document_type"),
         "gold_support": dict(support),
+        "boundary": boundary_report(detected),
         "path_label": "Path: product rules-only",
         "gate_label": "Gates: strict match, Turkish documents",
     }
@@ -568,6 +618,25 @@ def _print_gold_support(results: dict[str, Any]) -> None:
             print(f"    {label}: {count}{flag}")
 
 
+def _print_boundary(results: dict[str, Any]) -> None:
+    boundary = results.get("boundary") or {}
+    print("\n" + "=" * 60)
+    print("BOUNDARY (report only; IoU below 0.8; the 0.5 rule and the gates are unchanged)")
+    if not boundary:
+        print("  none")
+        return
+    for language, categories in boundary.items():
+        print(f"  {language}:")
+        for category, scored in categories.items():
+            print(f"    {category}: {scored['below']} of {scored['matches']}")
+            for item in scored["items"]:
+                print(
+                    f"      - {item['document']} gold {item['gold_span'][0]}:{item['gold_span'][1]} "
+                    f"{item['gold']!r} predicted {item['predicted_span'][0]}:{item['predicted_span'][1]} "
+                    f"{item['predicted']!r} IoU {item['iou']:.3f}"
+                )
+
+
 def print_results(results: dict[str, Any]) -> bool:
     """Pretty-print evaluation results. Status words are ASCII for Windows consoles."""
     print("\n" + "=" * 60)
@@ -589,6 +658,7 @@ def print_results(results: dict[str, Any]) -> bool:
         _print_overall("OVERALL:", turkish["person_family"])
     _print_slices(results)
     _print_by_split(results)
+    _print_boundary(results)
     _print_gold_support(results)
     english = by_language.get("en")
     if english is not None and english["corpus_size"]:
@@ -644,6 +714,7 @@ def build_report(results: dict[str, Any], failures: list[str]) -> dict[str, Any]
         "by_difficulty": results.get("by_difficulty", {}),
         "by_document_type": results.get("by_document_type", {}),
         "gold_support": results.get("gold_support", {}),
+        "boundary": results.get("boundary", {}),
         "gate_language": "tr",
         "gate_match": "strict",
         "gates": {

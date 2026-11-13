@@ -61,6 +61,8 @@ A prediction matches a gold entity when both have the same type and the span
 overlap IoU is **at least 0.5**. Each prediction is paired with the unmatched
 gold span that has the highest IoU. An overlap of exactly 0.5 counts. This
 strict match is what the CI gates use, and the gates use Turkish documents.
+The same strict pairs are listed when their IoU is below 0.8. That list is
+report-only. It does not change the 0.5 rule or the gates.
 
 The same run also reports a person-family match. `PERSON_NAME`, `FIRST_NAME`,
 `LAST_NAME`, `ALIAS`, `CLAIMANT_NAME`, `DEFENDANT_NAME`, `LAWYER_NAME`,
