@@ -131,9 +131,10 @@ mention that does not repeat the role word.
 | Şüpheli | `SUSPECT_NAME` |
 | Müşteki, şikâyetçi | `COMPLAINANT_NAME` |
 | Mağdur | `VICTIM_NAME` |
-| Katılan, when the person joined a criminal prosecution | `VICTIM_NAME` |
+| Katılan, when the person joined a criminal case and is not also the victim | `INTERVENOR_NAME` |
+| Mağdur-katılan, katılan mağdur, when the same person is both the victim and katılan | `VICTIM_NAME` |
 | Müdahil in a civil proceeding, including fer'i müdahil | `INTERVENOR_NAME` |
-| Müdahil in an older criminal text, where it means katılan | `VICTIM_NAME` |
+| Müdahil in an older criminal text, where it means katılan | `INTERVENOR_NAME` |
 | Kanuni temsilci, yasal temsilci, vasi, and veli or kayyım when the person is the appointed representative | `LEGAL_REPRESENTATIVE_NAME` |
 | Arabulucu | `MEDIATOR_NAME` |
 | Tercüman, and çevirmen in a procedural role | `INTERPRETER_NAME` |
@@ -148,6 +149,11 @@ mention that does not repeat the role word.
 | Tanık | `WITNESS_NAME` |
 | Bilirkişi | `EXPERT_NAME` |
 | Dilekçe sahibi | `PERSON_NAME` |
+
+`INTERVENOR_NAME` is a person or body that joins existing proceedings as a
+party. A katılan is not always the victim. The victim may be a child while
+the katılan is a parent, a person who was harmed but is not the victim, or
+a public institution.
 
 `Katılanlar` meaning the people who attended a meeting is not a role. It
 does not assign `VICTIM_NAME` or `INTERVENOR_NAME`. A role word that is
