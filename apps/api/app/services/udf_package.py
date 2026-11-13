@@ -243,6 +243,8 @@ def _pieces(
             rows = _table_rows(child, source)
             if rows:
                 pieces.append(("\n".join(rows), in_header))
+        elif name == "section":
+            pieces.extend(_pieces(child, source, body_size, in_header=in_header))
         elif name in {"header", "footer"}:
             pieces.extend(_pieces(child, source, body_size, in_header=True))
     return pieces

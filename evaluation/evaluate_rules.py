@@ -973,10 +973,6 @@ def _write_docx(path: Path, text: str) -> None:
 
 def _write_udf(path: Path, text: str) -> None:
     """One paragraph per line, the same text the PDF and DOCX fixtures use."""
-    import zipfile
-
-    if "]]>" in text:
-        raise ValueError("synthetic UDF text cannot contain a CDATA terminator")
     paragraphs: list[str] = []
     cursor = 0
     for line in text.splitlines(keepends=True) or [text]:
@@ -984,11 +980,67 @@ def _write_udf(path: Path, text: str) -> None:
             f'<paragraph><content startOffset="{cursor}" length="{len(line)}"/></paragraph>'
         )
         cursor += len(line)
+    _write_udf_package(path, text, "".join(paragraphs))
+
+
+def _write_sectioned_udf(path: Path) -> None:
+    """The same icra values, in two sections with a table between them."""
+    sections = [
+        [
+            "İCRA TAKİP TALEBİ\n",
+            "Ankara 6. İcra Dairesine,\n",
+        ],
+        [
+            "Borçlu: Cemre Dağ.\n",
+            "Dosya no: 2024/771.\n",
+            "Tahsilat önce TR58 9999 9000 0000 0000 0000 09 hesabına, "
+            "bakiye kalırsa TR31 9999 9000 0000 0000 0000 10 hesabına aktarılsın.\n",
+        ],
+    ]
+    rows = [
+        ["Alacaklı: Yıldız Mert", "T.C. 10000000764"],
+        [
+            "adres: Tunalı Hilmi Caddesi No: 90 Kavaklıdere/Ankara",
+            "e-posta yildiz.mert@example.com",
+        ],
+        ["telefon +90 532 010 1103"],
+    ]
+    parts: list[str] = []
+    elements: list[str] = []
+
+    def take(text: str) -> tuple[int, int]:
+        start = sum(len(part) for part in parts)
+        parts.append(text)
+        return start, len(text)
+
+    def paragraph(text: str) -> str:
+        start, length = take(text)
+        return f'<paragraph><content startOffset="{start}" length="{length}"/></paragraph>'
+
+    for lines in sections[:1]:
+        elements.append("<section>" + "".join(paragraph(line) for line in lines) + "</section>")
+    table_rows: list[str] = []
+    for row in rows:
+        cells = []
+        for cell in row:
+            cells.append(f"<cell>{paragraph(cell)}</cell>")
+        table_rows.append("<row>" + "".join(cells) + "</row>")
+    elements.append("<table>" + "".join(table_rows) + "</table>")
+    for lines in sections[1:]:
+        elements.append("<section>" + "".join(paragraph(line) for line in lines) + "</section>")
+    _write_udf_package(path, "".join(parts), "".join(elements))
+
+
+def _write_udf_package(path: Path, text: str, elements: str) -> None:
+    import zipfile
+
+    if "]]>" in text:
+        raise ValueError("synthetic UDF text cannot contain a CDATA terminator")
     xml = (
         '<?xml version="1.0" encoding="UTF-8"?>'
         '<template format_id="1.8">'
         f"<content><![CDATA[{text}]]></content>"
-        f"<elements>{''.join(paragraphs)}</elements>"
+        f"<elements>{elements}</elements>"
         "</template>"
     )
     with zipfile.ZipFile(path, "w") as archive:
@@ -1013,7 +1065,7 @@ def _read_docx_text(path: Path) -> str:
 
 
 async def run_e2e() -> int:
-    """Redact one PDF, one DOCX, and one UDF. Rules-expected leaks fail."""
+    """Redact one PDF, one DOCX, and two UDFs. Rules-expected leaks fail."""
     from app.domain.models import (
         DetectionMode,
         DocumentKind,
@@ -1054,24 +1106,34 @@ async def run_e2e() -> int:
         pdf_path = root / "sample.pdf"
         docx_path = root / "sample.docx"
         udf_path = root / "sample.udf"
+        udf_table_path = root / "sample-table.udf"
         _write_pdf(pdf_path, source["text"], font)
         _write_docx(docx_path, source["text"])
         _write_udf(udf_path, source["text"])
-        udf_text = extract_udf_text(udf_path).text
-        print("UDF text extraction missing:")
-        for entity in source["gold_entities"]:
-            if entity["text"] in udf_text:
-                continue
-            item = f"UDF {entity['type']} {entity['text']}"
-            extraction_missing.append(item)
-            print(f"  - {item}")
-        if not extraction_missing:
-            print("  none")
-        missing_from_udf = {item.split(" ", 2)[2] for item in extraction_missing}
-        for kind, path, reader, output_format in (
-            ("PDF", pdf_path, _read_pdf_text, "PDF"),
-            ("DOCX", docx_path, _read_docx_text, "DOCX"),
-            ("UDF", udf_path, _read_pdf_text, "PDF"),
+        _write_sectioned_udf(udf_table_path)
+        missing_by_label: dict[str, set[str]] = {}
+        for label, path in (("UDF", udf_path), ("UDF-TABLE", udf_table_path)):
+            udf_text = extract_udf_text(path).text
+            print(f"{label} text extraction missing:")
+            missing: set[str] = set()
+            if label == "UDF-TABLE" and "\t" not in udf_text:
+                print("  - table was not rendered")
+                return 1
+            for entity in source["gold_entities"]:
+                if entity["text"] in udf_text:
+                    continue
+                item = f"{label} {entity['type']} {entity['text']}"
+                extraction_missing.append(item)
+                missing.add(entity["text"])
+                print(f"  - {item}")
+            if not missing:
+                print("  none")
+            missing_by_label[label] = missing
+        for label, kind, path, reader, output_format in (
+            ("PDF", "PDF", pdf_path, _read_pdf_text, "PDF"),
+            ("DOCX", "DOCX", docx_path, _read_docx_text, "DOCX"),
+            ("UDF", "UDF", udf_path, _read_pdf_text, "PDF"),
+            ("UDF-TABLE", "UDF", udf_table_path, _read_pdf_text, "PDF"),
         ):
             store = JobStore(3600)
             job = store.create(path.name, path.read_bytes(), DocumentKind[kind])
@@ -1093,7 +1155,7 @@ async def run_e2e() -> int:
                     for entity in analysis.entities
                 ]
                 if not decisions:
-                    print(f"{kind}: the product found nothing to redact")
+                    print(f"{label}: the product found nothing to redact")
                     return 1
                 _output, audit = await apply_transformations(
                     job,
@@ -1103,15 +1165,15 @@ async def run_e2e() -> int:
                 extracted = reader(job.output_path)
                 validation = audit.validation
                 print(
-                    f"{kind} residual status: {validation.status.value} "
+                    f"{label} residual status: {validation.status.value} "
                     f"messages={len(validation.residual_messages)}"
                 )
             finally:
                 store.delete(job.id)
             for entity in source["gold_entities"]:
-                item = f"{kind} {entity['type']} {entity['text']}"
+                item = f"{label} {entity['type']} {entity['text']}"
                 if entity["text"] not in extracted:
-                    if kind == "UDF" and entity["text"] not in missing_from_udf:
+                    if label in missing_by_label and entity["text"] not in missing_by_label[label]:
                         masked.append(item)
                     continue
                 if _rules_expected(source["text"], entity):
@@ -1136,18 +1198,19 @@ async def run_e2e() -> int:
             print(f"  - {item}")
     else:
         print("  none")
-    udf_accounted = (
-        len(extraction_missing)
-        + len(masked)
-        + sum(item.startswith("UDF ") for item in gaps)
-        + sum(item.startswith("UDF ") for item in leaks)
-    )
-    if udf_accounted != len(source["gold_entities"]):
-        print(
-            "UDF gold values were not all accounted for "
-            f"({udf_accounted} of {len(source['gold_entities'])})"
+    for label in ("UDF", "UDF-TABLE"):
+        accounted = (
+            sum(item.startswith(f"{label} ") for item in extraction_missing)
+            + sum(item.startswith(f"{label} ") for item in masked)
+            + sum(item.startswith(f"{label} ") for item in gaps)
+            + sum(item.startswith(f"{label} ") for item in leaks)
         )
-        return 1
+        if accounted != len(source["gold_entities"]):
+            print(
+                f"{label} gold values were not all accounted for "
+                f"({accounted} of {len(source['gold_entities'])})"
+            )
+            return 1
     return 1 if leaks or extraction_missing else 0
 
 
@@ -1178,7 +1241,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--e2e",
         action="store_true",
-        help="Local only. Redact one synthetic PDF, DOCX, and UDF through the product export and check for leaks.",
+        help="Local only. Redact one synthetic PDF, one DOCX, and two UDFs through the product export and check for leaks.",
     )
     return parser.parse_args(argv)
 

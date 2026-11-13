@@ -105,9 +105,10 @@ deterministic detectors for the document language, then the product merge.
 `--legacy` runs the previous list and is report-only for one release.
 `--product` also runs local NER and is not gated. If that model is missing,
 the run fails instead of presenting rules-only numbers as the NER result.
-`--e2e` redacts one synthetic PDF, one DOCX, and one UDF built from the same
-text. It fails when a structured identifier or a role-prefixed name remains.
-Other remaining gold values are known gaps. For the UDF it also lists any
+`--e2e` redacts one synthetic PDF, one DOCX, and two UDFs built from the same
+text. The second UDF has two sections and a table. It fails when a structured
+identifier or a role-prefixed name remains.
+Other remaining gold values are known gaps. For each UDF it also lists any
 gold value missing from the extracted text, and that absence fails the run.
 Every other UDF gold value is either masked or listed as a known gap.
 Before scoring, it checks every gold span: `text[start:end]` must
