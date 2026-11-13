@@ -171,10 +171,25 @@ identifier TEST, sort code 009900, and an eight-digit account. TEST is not a
 real bank code, and the sort code is the fictional 009900. No real bank code
 or SWIFT example is used.
 
-English phones are either in the Ofcom drama range `07700 900000`–`07700 900999`
-(seven numbers) or a US number whose exchange is 555 and whose line is in
-`0100`–`0199` (twenty-eight numbers, all `202-555-01xx`). Email domains are
-`example.com` (19) and `example.org` (18).
+English phones written before the November error analysis are either in the
+Ofcom drama range `07700 900000`–`07700 900999` (seven numbers) or a US
+number whose exchange is 555 and whose line is in `0100`–`0199` (twenty-eight
+numbers, all `202-555-01xx`). Email domains are `example.com` (19) and
+`example.org` (18).
+
+Five later English test documents, `en-test-phone-holdout-001` through
+`en-test-phone-holdout-005`, add ten phone spans. They were written from
+these guidelines on 14 November 2026, before any detector was run on them.
+The span is the number only. The cues are a function word between a phone
+label and the number (`telephone at`, `phone on`, `Tel to`), `telephoned`
+and `telephoned to`, `call me on`, the forms held back from the first rule
+change (`or` after an email, and `may call`), and two forms that were not in
+the earlier miss list (`reached me at`, `ring`). `extension 214` in
+`en-test-phone-holdout-002` is not a phone. The numbers are `202-555-0171`
+through `202-555-0175` and `07700 900171` through `07700 900175`. Phone
+recall on this set is reported on its own. The English phone spans already
+in dev and test had been listed in an error analysis, so those results are
+not a clean measure of a later phone rule.
 
 ## Review
 
