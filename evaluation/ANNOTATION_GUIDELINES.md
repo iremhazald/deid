@@ -115,9 +115,11 @@ also its own `POSTAL_CODE` span. Do not nest two spans of the same type.
 
 ## Role names
 
-Use a role type only when the role is clear from the text in that clause.
-The role word stays outside the span. If the schema has no type for the
-role, use `PERSON_NAME`.
+Use a role type only when the role is clear from the text. The role word
+stays outside the span. If the schema has no type for the role, use
+`PERSON_NAME`. Once the text states a person's role, every mention of that
+person in the same document takes the same role type, including a later
+mention that does not repeat the role word.
 
 ### Turkish
 
@@ -129,7 +131,9 @@ role, use `PERSON_NAME`.
 | Şüpheli | `SUSPECT_NAME` |
 | Müşteki, şikâyetçi | `COMPLAINANT_NAME` |
 | Mağdur | `VICTIM_NAME` |
-| Katılan, müdahil | `INTERVENOR_NAME` |
+| Katılan, when the person joined a criminal prosecution | `VICTIM_NAME` |
+| Müdahil in a civil proceeding, including fer'i müdahil | `INTERVENOR_NAME` |
+| Müdahil in an older criminal text, where it means katılan | `VICTIM_NAME` |
 | Kanuni temsilci, yasal temsilci, vasi, and veli or kayyım when the person is the appointed representative | `LEGAL_REPRESENTATIVE_NAME` |
 | Arabulucu | `MEDIATOR_NAME` |
 | Tercüman, and çevirmen in a procedural role | `INTERPRETER_NAME` |
@@ -144,6 +148,10 @@ role, use `PERSON_NAME`.
 | Tanık | `WITNESS_NAME` |
 | Bilirkişi | `EXPERT_NAME` |
 | Dilekçe sahibi | `PERSON_NAME` |
+
+`Katılanlar` meaning the people who attended a meeting is not a role. It
+does not assign `VICTIM_NAME` or `INTERVENOR_NAME`. A role word that is
+actually in the list, such as `Av.`, still applies to that name.
 
 A vekil named in a vekâletname is the appointed agent, not a lawyer, even
 when a lawyer could have been appointed. A vekil who appears as counsel in
@@ -181,11 +189,10 @@ a hearing, a petition, or a judgment is `LAWYER_NAME`.
 `CLAIMANT_NAME` or `DEFENDANT_NAME` only when the text states that
 first-instance role.
 
-There is no schema type yet for a criminal complainant, a victim, the author
-of a petition (`dilekçe sahibi`), a prosecutor, a clerk, an arbitrator, or a
-mediator. Those names stay `PERSON_NAME` until the schema has types for
-them. `Dr.`, `Prof.`, `mimar`, and `mühendis` are not legal roles. A role
-phrase with no person, such as `Hâkimler ve Savcılar Kurulu` or `the
+Complainant, victim, prosecutor, clerk, arbitrator, and mediator have role
+types in the tables above. A petition author (`dilekçe sahibi`) stays
+`PERSON_NAME`. `Dr.`, `Prof.`, `mimar`, and `mühendis` are not legal roles.
+A role phrase with no person, such as `Hâkimler ve Savcılar Kurulu` or `the
 Claimant's case`, is not a name.
 
 ## Checksums
@@ -372,7 +379,10 @@ ordinal, and the chamber. Stop before the docket clause. Masking only part
 of that caption, such as the court number, is a masking-policy decision. It
 does not change the label or the span.
 
-Correct: `İstanbul 2. Asliye Hukuk Mahkemesi`.
+An icra dairesi is `COURT_NAME`. The masking risk is the same as a court
+name.
+
+Correct: `İstanbul 2. Asliye Hukuk Mahkemesi`. `Ankara 6. İcra Dairesi`.
 Incorrect: `İstanbul 2. Asliye Hukuk Mahkemesi, Esas No: 2021/456`, or
 `İş mahkemeleri` in a sentence about a statute.
 Edge: a high court named as the forum is `COURT_NAME`. The same words used
@@ -417,18 +427,22 @@ clause calls the person counsel.
 ### CLAIMANT_NAME
 
 The claiming party when the text itself shows that role: davacı, alacaklı,
-claimant, plaintiff, applicant. A criminal complainant (`şikayetçi`) and a
-petition author (`dilekçe sahibi`) stay `PERSON_NAME`.
+claimant, plaintiff, applicant. A criminal complainant (`şikayetçi`) is
+`COMPLAINANT_NAME`. A petition author (`dilekçe sahibi`) stays
+`PERSON_NAME`.
 
 Correct: `Davacı Mehmet Kaya` → `Mehmet Kaya`.
-Incorrect: `Şikayetçi: Cem Acar` as `CLAIMANT_NAME`, or including `Davacı`.
+Incorrect: `Şikayetçi: Cem Acar` as `CLAIMANT_NAME`. That span is
+`COMPLAINANT_NAME`. Including `Davacı` in the span is also incorrect.
 
 ### DEFENDANT_NAME
 
-The opposing or accused party: davalı, sanık, borçlu, defendant, respondent.
+The opposing party in a civil or enforcement proceeding: davalı, borçlu,
+defendant, respondent. In a criminal proceeding, sanık is `ACCUSED_NAME`.
 
-Correct: `Sanık: Ali Demir` → `Ali Demir`.
-Incorrect: `PERSON_NAME` for that span.
+Correct: `Borçlu: Cemre Dağ` → `Cemre Dağ`.
+Incorrect: `Sanık: Ali Demir` as `DEFENDANT_NAME`. That span is
+`ACCUSED_NAME`.
 
 ### WITNESS_NAME
 
@@ -569,8 +583,8 @@ Incorrect: a TCKN, an IBAN, or a 4-digit branch code.
 Do not invent labels for these. Use `PERSON_NAME` for the person, and leave
 the descriptive phrase unlabeled.
 
-- Criminal complainant (`şikayetçi`), victim (`mağdur`), petition author
-  (`dilekçe sahibi`), prosecutor (`savcı`), and clerk (`zabıt kâtibi`).
+- Petition author (`dilekçe sahibi`). A complainant, a victim, a
+  prosecutor, and a clerk have role types in the tables above.
 - Diagnosis, medication, and criminal sentences. They are out of scope.
 - Initials. `M.K.` is `PERSON_NAME`. `INITIALS` is a redaction strategy, not
   an entity type.
