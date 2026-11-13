@@ -61,4 +61,5 @@ apps/api/tests/*
 !apps/api/tests/test_court_running_header.py
 !apps/api/tests/test_docx_export_metadata.py
 !apps/api/tests/test_en_national_id_label.py
+!apps/api/tests/test_en_phone_cues.py
 !apps/api/tests/test_residual_placeholders.py

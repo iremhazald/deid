@@ -4,6 +4,15 @@ All notable changes and improvements to the DeID LegalTech platform.
 
 ## [Unreleased]
 
+- English phone detection now allows one function word (`at`, `on`, or `to`)
+  between the label and the number, the verb `telephoned` with an optional
+  `to`, and the phrase `call me on`. The number must contain 10 to 15 digits.
+  `or` after an email, and a bare `call`, are unchanged. The label cannot
+  match inside a longer word, so `telephone` does not fire on `telephoned`.
+  On the phones already in the corpus, dev recall moved from 3/28 to 14/28
+  and test recall from 0/10 to 4/10, with precision 100% both times. The
+  ten-phone holdout, scored on its own, is 6/10. There is no new false
+  positive. Turkish scores did not move.
 - Katılan in a criminal case is now `VICTIM_NAME`, matching the guidelines.
   Müdahil is `VICTIM_NAME` only when the text is criminal. Fer'i müdahil
   stays `INTERVENOR_NAME`. Attendance (`toplantıya katılan`) is still not a

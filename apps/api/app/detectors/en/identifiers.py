@@ -48,10 +48,17 @@ _NID = re.compile(
     rf"(?i)(?<![A-Za-z])(?P<label>{_NID_LABEL})(?![A-Za-z])\s*[:\-–]?\s*"
     rf"(?P<value>[A-Za-z0-9][A-Za-z0-9\-\s]{{4,24}})"
 )
+_PHONE_VALUE = r"(?P<value>\+?\d[\d\s()./\-]{6,20}\d)"
+# The label must end at a word boundary so "telephone" does not match inside
+# "telephoned". One function word may sit between the label and the number.
 _PHONE = re.compile(
-    rf"(?i)(?<![A-Za-z])(?P<label>{_PHONE_LABEL})\s*[:\-–]?\s*"
-    rf"(?P<value>\+?\d[\d\s()./\-]{{6,20}}\d)"
+    rf"(?i)(?<![A-Za-z])(?P<label>{_PHONE_LABEL})(?![A-Za-z])\s*[:\-–]?\s*{_PHONE_VALUE}"
 )
+_PHONE_FUNCTION = re.compile(
+    rf"(?i)(?<![A-Za-z])(?P<label>{_PHONE_LABEL})(?![A-Za-z])\s+(?:at|on|to)\s+{_PHONE_VALUE}"
+)
+_TELEPHONED = re.compile(rf"(?i)(?<![A-Za-z])telephoned(?:\s+to)?\s+{_PHONE_VALUE}")
+_CALL_ME_ON = re.compile(rf"(?i)(?<![A-Za-z])call\s+me\s+on\s+{_PHONE_VALUE}")
 _FIN = re.compile(
     rf"(?i)(?<![A-Za-z])(?P<label>{_FIN_LABEL})\s*[:\-–]?\s*"
     rf"(?P<value>[A-Za-z0-9][A-Za-z0-9\-\s]{{3,34}})"
@@ -154,23 +161,33 @@ def parse_identifiers(page: PageText) -> list[EntityCandidate]:
                 },
             )
         )
-    for match in _PHONE.finditer(page.text):
-        found.append(
-            make_candidate(
-                page,
-                text=match.group("value").strip(),
-                local_start=match.start("value"),
-                local_end=match.end("value"),
-                entity_type=EntityType.PHONE_NUMBER,
-                detector="EN_PHONE_CONTEXT",
-                reason="Phone-like value under an English contact label.",
-                validated=False,
-                attributes={
-                    "source": "en_phone",
-                    "evidence": seed(("en_phone_label", 4)),
-                },
+    seen_phones: set[tuple[int, int]] = set()
+    for pattern in (_PHONE, _PHONE_FUNCTION, _TELEPHONED, _CALL_ME_ON):
+        for match in pattern.finditer(page.text):
+            value = match.group("value").strip()
+            digits = sum(character.isdigit() for character in value)
+            if digits < 10 or digits > 15:
+                continue
+            span = (match.start("value"), match.end("value"))
+            if span in seen_phones:
+                continue
+            seen_phones.add(span)
+            found.append(
+                make_candidate(
+                    page,
+                    text=value,
+                    local_start=span[0],
+                    local_end=span[1],
+                    entity_type=EntityType.PHONE_NUMBER,
+                    detector="EN_PHONE_CONTEXT",
+                    reason="Phone-like value under an English contact label.",
+                    validated=False,
+                    attributes={
+                        "source": "en_phone",
+                        "evidence": seed(("en_phone_label", 4)),
+                    },
+                )
             )
-        )
     for match in _FIN.finditer(page.text):
         kind = _FIN_KIND.get(match.group("label").casefold(), "ACCOUNT")
         if kind == "IBAN":
