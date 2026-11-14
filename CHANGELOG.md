@@ -4,6 +4,15 @@ All notable changes and improvements to the DeID LegalTech platform.
 
 ## [Unreleased]
 
+- A katılan who is not also the victim stays `INTERVENOR_NAME`. `Mağdur-katılan`
+  and `katılan mağdur` are the victim. `Katılan müşteki` and `müşteki katılan`
+  take the current status, intervenor, while `müşteki` alone stays the
+  complainant. A party block now ends before the next role label on the same
+  line, so a child victim and a parent who joins as katılan stay different
+  people. `Toplantıya katılanlar` remains attendance and assigns no role.
+  Turkish strict precision moved from 91.27% to 92.00% and recall from
+  80.97% to 81.61% (251 / 24 / 59 to 253 / 22 / 57). The six new documents,
+  scored on their own, moved from 7 of 9 to 9 of 9.
 - Commit `1e35981` put the UDF section reader and the end-to-end fixture in
   one change. The reader change is in `udf_package.py`. The second UDF, a
   table inside more than one section, is built in the harness from the

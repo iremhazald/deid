@@ -16,11 +16,16 @@ from app.detectors.legal.names import (
 from app.detectors.legal.address import parse_address_tokens
 from app.detectors.legal.organisation import leading_company_span, parse_companies
 from app.detectors.legal.parentage import parse_parentage
-from app.detectors.legal.roles import party_label_pattern, resolve_party
+from app.detectors.legal.roles import (
+    party_label_pattern,
+    party_label_sentence_pattern,
+    resolve_party,
+)
 from app.detectors.registry import PageText
 from app.domain.models import EntityCandidate, EntityType
 
 _OPEN = party_label_pattern()
+_NEXT_LABEL = party_label_sentence_pattern()
 _NEXT_SECTION = re.compile(
     r"(?m)^\s*(?:"
     r"GEREKÇE|GEREKCE|HÜKÜM|HUKUM|KARAR|TARAFLAR|"
@@ -55,7 +60,7 @@ def _block_end(text: str, value_start: int) -> int:
     # Search remaining text for another party opener or a section header.
     rest = text[value_start:limit]
     candidates = []
-    for match in _OPEN.finditer(text):
+    for match in _NEXT_LABEL.finditer(text):
         if match.start() > value_start:
             candidates.append(match.start())
             break

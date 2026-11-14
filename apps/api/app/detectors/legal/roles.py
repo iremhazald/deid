@@ -51,6 +51,20 @@ PARTY_ROLES: tuple[tuple[str, str, EntityType], ...] = (
     ("musteki-supheli", "COMPLAINANT", EntityType.COMPLAINANT_NAME),
     ("katılan müşteki", "INTERVENOR", EntityType.INTERVENOR_NAME),
     ("katilan musteki", "INTERVENOR", EntityType.INTERVENOR_NAME),
+    ("katılan-müşteki", "INTERVENOR", EntityType.INTERVENOR_NAME),
+    ("katilan-musteki", "INTERVENOR", EntityType.INTERVENOR_NAME),
+    ("müşteki katılan", "INTERVENOR", EntityType.INTERVENOR_NAME),
+    ("musteki katilan", "INTERVENOR", EntityType.INTERVENOR_NAME),
+    ("müşteki-katılan", "INTERVENOR", EntityType.INTERVENOR_NAME),
+    ("musteki-katilan", "INTERVENOR", EntityType.INTERVENOR_NAME),
+    ("mağdur-katılan", "VICTIM", EntityType.VICTIM_NAME),
+    ("magdur-katilan", "VICTIM", EntityType.VICTIM_NAME),
+    ("mağdur katılan", "VICTIM", EntityType.VICTIM_NAME),
+    ("magdur katilan", "VICTIM", EntityType.VICTIM_NAME),
+    ("katılan-mağdur", "VICTIM", EntityType.VICTIM_NAME),
+    ("katilan-magdur", "VICTIM", EntityType.VICTIM_NAME),
+    ("katılan mağdur", "VICTIM", EntityType.VICTIM_NAME),
+    ("katilan magdur", "VICTIM", EntityType.VICTIM_NAME),
     ("suç mağduru", "VICTIM", EntityType.VICTIM_NAME),
     ("suc magduru", "VICTIM", EntityType.VICTIM_NAME),
     ("mağdur çocuk", "VICTIM", EntityType.VICTIM_NAME),
@@ -174,6 +188,20 @@ PERSON_TRIGGERS: tuple[tuple[str, str, EntityType], ...] = (
     ("musteki-supheli", "COMPLAINANT", EntityType.COMPLAINANT_NAME),
     ("katılan müşteki", "INTERVENOR", EntityType.INTERVENOR_NAME),
     ("katilan musteki", "INTERVENOR", EntityType.INTERVENOR_NAME),
+    ("katılan-müşteki", "INTERVENOR", EntityType.INTERVENOR_NAME),
+    ("katilan-musteki", "INTERVENOR", EntityType.INTERVENOR_NAME),
+    ("müşteki katılan", "INTERVENOR", EntityType.INTERVENOR_NAME),
+    ("musteki katilan", "INTERVENOR", EntityType.INTERVENOR_NAME),
+    ("müşteki-katılan", "INTERVENOR", EntityType.INTERVENOR_NAME),
+    ("musteki-katilan", "INTERVENOR", EntityType.INTERVENOR_NAME),
+    ("mağdur-katılan", "VICTIM", EntityType.VICTIM_NAME),
+    ("magdur-katilan", "VICTIM", EntityType.VICTIM_NAME),
+    ("mağdur katılan", "VICTIM", EntityType.VICTIM_NAME),
+    ("magdur katilan", "VICTIM", EntityType.VICTIM_NAME),
+    ("katılan-mağdur", "VICTIM", EntityType.VICTIM_NAME),
+    ("katilan-magdur", "VICTIM", EntityType.VICTIM_NAME),
+    ("katılan mağdur", "VICTIM", EntityType.VICTIM_NAME),
+    ("katilan magdur", "VICTIM", EntityType.VICTIM_NAME),
     ("suç mağduru", "VICTIM", EntityType.VICTIM_NAME),
     ("suc magduru", "VICTIM", EntityType.VICTIM_NAME),
     ("mağdur çocuk", "VICTIM", EntityType.VICTIM_NAME),
@@ -341,12 +369,24 @@ def roster_label_pattern() -> re.Pattern[str]:
     return re.compile(rf"(?<!\w)({body})\s*:", re.IGNORECASE)
 
 
-def party_label_pattern() -> re.Pattern[str]:
+def _party_label_body() -> str:
     raw = sorted((item[0] for item in PARTY_ROLES), key=len, reverse=True)
-    body = "|".join(_pattern_for(label) for label in raw)
+    return "|".join(_pattern_for(label) for label in raw)
+
+
+def party_label_pattern() -> re.Pattern[str]:
     return re.compile(
-        rf"(?m)^\s*({body})(?:\s*-\s*\(\s*\d+\s*\)\s*-)?\s*:",
+        rf"(?m)^\s*({_party_label_body()})(?:\s*-\s*\(\s*\d+\s*\)\s*-)?\s*:",
         re.IGNORECASE,
+    )
+
+
+def party_label_sentence_pattern() -> re.Pattern[str]:
+    """A later party label, including one that starts after a period on the same line."""
+    return re.compile(
+        rf"(?:^|(?<=[.!?;\n]))\s*({_party_label_body()})"
+        rf"(?:\s*-\s*\(\s*\d+\s*\)\s*-)?\s*:",
+        re.IGNORECASE | re.MULTILINE,
     )
 
 

@@ -199,6 +199,10 @@ def test_turkish_case_colon_linebreak_and_registry_number() -> None:
         ("SSÇ : MEHMET ÇELİK", EntityType.ACCUSED_NAME, "MEHMET ÇELİK"),
         ("Müdahil Zeynep Arslan", EntityType.INTERVENOR_NAME, "Zeynep Arslan"),
         ("Katılan Müşteki: Zeynep Arslan", EntityType.INTERVENOR_NAME, "Zeynep Arslan"),
+        ("Müşteki katılan: Serkan Balcı", EntityType.INTERVENOR_NAME, "Serkan Balcı"),
+        ("Mağdur-katılan: Berna Kalay", EntityType.VICTIM_NAME, "Berna Kalay"),
+        ("Katılan mağdur: Tarık Eren", EntityType.VICTIM_NAME, "Tarık Eren"),
+        ("Müşteki: Filiz Akın", EntityType.COMPLAINANT_NAME, "Filiz Akın"),
         ("Yasal Temsilci Fatma Aksoy", EntityType.LEGAL_REPRESENTATIVE_NAME, "Fatma Aksoy"),
         ("Vasi : FATMA AKSOY", EntityType.LEGAL_REPRESENTATIVE_NAME, "FATMA AKSOY"),
         ("Kayyım : FATMA AKSOY", EntityType.LEGAL_REPRESENTATIVE_NAME, "FATMA AKSOY"),
@@ -727,3 +731,30 @@ def test_merging_a_short_name_with_the_full_name_keeps_one_tag() -> None:
     assert job.analysis is not None
     assert {item.type for item in job.analysis.entities} == {EntityType.COMPLAINANT_ACCUSED_NAME}
     assert {item.placeholder_token for item in job.analysis.entities} == {"[MÜŞTEKİ_SANIK_1]"}
+
+
+def test_meeting_attendees_are_not_a_role() -> None:
+    text = "Toplantıya katılanlar: Koray Demir, Pınar Usta. Tutanak imzalandı."
+    found = _scan(text, "tr")
+    for name in ("Koray Demir", "Pınar Usta"):
+        hits = [item for item in found if _fold(item.text) == _fold(name)]
+        assert hits, (name, [(item.type.value, item.text) for item in found])
+        assert [item.type for item in hits] == [EntityType.PERSON_NAME]
+    assert _of_type(found, EntityType.INTERVENOR_NAME) == []
+    assert _of_type(found, EntityType.VICTIM_NAME) == []
+
+
+def test_child_victim_and_parent_katilan_are_different_people() -> None:
+    text = (
+        "Mağdur çocuk: Ekin Sarı. Katılan: Nesrin Sarı, çocuğun annesidir. "
+        "Ceza davasında anne kovuşturmaya katıldı."
+    )
+    found = _scan(text, "tr")
+    assert _has(found, EntityType.VICTIM_NAME, "Ekin Sarı"), [
+        (item.type.value, item.text) for item in found
+    ]
+    assert _has(found, EntityType.INTERVENOR_NAME, "Nesrin Sarı"), [
+        (item.type.value, item.text) for item in found
+    ]
+    assert not _has(found, EntityType.VICTIM_NAME, "Nesrin Sarı")
+    assert not _has(found, EntityType.INTERVENOR_NAME, "Ekin Sarı")
